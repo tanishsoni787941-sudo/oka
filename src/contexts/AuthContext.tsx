@@ -12,6 +12,10 @@ export interface UserProfile {
   profile_photo: string;
   active_device_id: string;
   created_at: number; // timestamp
+  role: 'admin' | 'user';
+  is_blocked: boolean;
+  completed_videos: string[];
+  progress_percentage: number;
 }
 
 interface AuthContextType {
@@ -57,6 +61,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const data = docSnap.data() as UserProfile;
           setProfile(data);
           
+          // Check for blocked status
+          if (data.is_blocked) {
+            signOut(auth);
+            setLoading(false);
+            return;
+          }
+
           // Check for multiple device login
           if (data.active_device_id && data.active_device_id !== deviceId) {
             setMultipleDeviceError(true);

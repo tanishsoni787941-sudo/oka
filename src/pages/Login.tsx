@@ -6,6 +6,8 @@ import { auth, db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Leaf, ArrowRight, Sprout } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Canvas } from '@react-three/fiber';
+import MushroomModel from '../components/MushroomModel';
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -51,6 +53,7 @@ export default function Login() {
         }
 
         const now = Date.now();
+        const role = email.toLowerCase() === 'organicmushroomfarm@gmail.com' ? 'admin' : 'user';
         await setDoc(doc(db, 'users', userCred.user.uid), {
           id: userCred.user.uid,
           full_name: fullName,
@@ -58,7 +61,11 @@ export default function Login() {
           student_id: studentId,
           profile_photo: profilePhoto || '',
           active_device_id: deviceId,
-          created_at: now
+          created_at: now,
+          role: role,
+          is_blocked: false,
+          completed_videos: [],
+          progress_percentage: 0
         });
         
         navigate('/');
@@ -106,34 +113,25 @@ export default function Login() {
             Join our immersive training platform. Learn sustainable techniques, track your progress, and build your own organic farm from scratch.
           </p>
 
-          {/* 3D Floating Cards Illustration */}
-          <div className="relative h-64 w-full max-w-md hidden sm:block">
+          {/* 3D Mushroom Model */}
+          <div className="relative h-80 w-full max-w-md hidden sm:block">
+            <div className="absolute inset-0 z-20">
+              <Canvas camera={{ position: [0, 0, 4], fov: 50 }}>
+                <ambientLight intensity={0.5} />
+                <MushroomModel />
+              </Canvas>
+            </div>
+            
             <motion.div 
               animate={{ y: [0, -15, 0], rotateZ: [-5, -5, -5] }}
               transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute top-0 left-0 w-48 h-32 glass-card rounded-2xl p-4 z-20"
+              className="absolute top-0 left-0 w-48 h-32 glass-card rounded-2xl p-4 z-10 opacity-50"
             >
               <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center mb-3">
                 <Leaf className="h-4 w-4 text-purple-600 dark:text-purple-400" />
               </div>
               <div className="h-2 w-24 bg-stone-200 dark:bg-stone-700 rounded mb-2"></div>
               <div className="h-2 w-16 bg-stone-200 dark:bg-stone-700 rounded"></div>
-            </motion.div>
-            
-            <motion.div 
-              animate={{ y: [0, 15, 0], rotateZ: [5, 5, 5] }}
-              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-              className="absolute top-12 right-0 w-56 h-40 glass-card rounded-2xl p-4 z-10"
-            >
-              <div className="flex justify-between items-center mb-4">
-                <div className="h-3 w-20 bg-stone-200 dark:bg-stone-700 rounded"></div>
-                <div className="h-6 w-6 rounded-full bg-green-100 dark:bg-green-900/50"></div>
-              </div>
-              <div className="space-y-2">
-                <div className="h-2 w-full bg-stone-200 dark:bg-stone-700 rounded"></div>
-                <div className="h-2 w-full bg-stone-200 dark:bg-stone-700 rounded"></div>
-                <div className="h-2 w-2/3 bg-stone-200 dark:bg-stone-700 rounded"></div>
-              </div>
             </motion.div>
           </div>
         </motion.div>

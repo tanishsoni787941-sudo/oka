@@ -9,7 +9,14 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import { AlertTriangle } from 'lucide-react';
+import Admin from './pages/Admin';
+import About from './pages/About';
+import Support from './pages/Support';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import ThreeBackground from './components/ThreeBackground';
+import AIChatbot from './components/AIChatbot';
+import { AlertTriangle, ShieldAlert } from 'lucide-react';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, multipleDeviceError } = useAuth();
@@ -57,22 +64,52 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) return null;
+
+  if (!user || profile?.role !== 'admin') {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route 
-              path="/" 
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              } 
-            />
-          </Routes>
+          <div className="min-h-screen flex flex-col bg-stone-50 dark:bg-stone-950 transition-colors relative">
+            <ThreeBackground />
+            <Navbar />
+            <main className="flex-grow relative z-10">
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route 
+                  path="/" 
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/admin" 
+                  element={
+                    <AdminRoute>
+                      <Admin />
+                    </AdminRoute>
+                  } 
+                />
+                <Route path="/about" element={<About />} />
+                <Route path="/support" element={<Support />} />
+              </Routes>
+            </main>
+            <Footer />
+            <AIChatbot />
+          </div>
         </Router>
       </AuthProvider>
     </ThemeProvider>

@@ -1,284 +1,355 @@
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
-import { COURSE_LESSONS } from '../data/course';
-import { getDaysSinceRegistration, hasReachedUnlockTime, getUnlockTime } from '../lib/utils';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { collection, doc, getDocs, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
-import LessonCard from '../components/LessonCard';
-import CountdownTimer from '../components/CountdownTimer';
-import { LogOut, Moon, Sun, User as UserIcon, Phone, Mail, Instagram, Facebook, Youtube, Sprout } from 'lucide-react';
-import { motion } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
+import { Lesson } from '../data/lessons';
+import { 
+  Play, 
+  Lock, 
+  CheckCircle, 
+  Clock, 
+  FileText, 
+  ExternalLink, 
+  Loader2, 
+  Trophy,
+  ChevronRight,
+  AlertCircle,
+  LogOut,
+  ShieldCheck
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import VideoPlayer from '../components/VideoPlayer';
+import { format, addDays, isAfter, isBefore, setHours, setMinutes, setSeconds, differenceInSeconds } from 'date-fns';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { profile, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
-  const [completedLessons, setCompletedLessons] = useState<string[]>([]);
-  
+  const { user, profile, logout } = useAuth();
+  const navigate = useNavigate();
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [now, setNow] = useState(new Date());
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
   useEffect(() => {
-    if (!profile) return;
-    
-    const q = query(collection(db, 'progress'), where('user_id', '==', profile.id));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const completed = snapshot.docs
-        .filter(doc => doc.data().completed)
-        .map(doc => doc.data().lesson_id);
-      setCompletedLessons(completed);
+    const unsub = onSnapshot(collection(db, 'lessons'), (snap) => {
+      const fetchedLessons = snap.docs.map(doc => doc.data() as Lesson);
+      fetchedLessons.sort((a, b) => a.order - b.order);
+      setLessons(fetchedLessons);
+      setLoading(false);
     });
-    
-    return () => unsubscribe();
-  }, [profile]);
 
-  if (!profile) return null;
+    const timer = setInterval(() => setNow(new Date()), 1000);
 
-  const daysSinceReg = getDaysSinceRegistration(new Date(profile.created_at));
-  const reachedTime = hasReachedUnlockTime();
-  
-  const progressPercentage = Math.round((completedLessons.length / COURSE_LESSONS.length) * 100);
-  const allCompleted = completedLessons.length === COURSE_LESSONS.length;
+    return () => {
+      unsub();
+      clearInterval(timer);
+    };
+  }, []);
 
-  const nextTimeLockedLesson = COURSE_LESSONS.find(lesson => {
-    if (completedLessons.includes(lesson.id)) return false;
-    if (lesson.requiresPreviousComplete) return false;
+  const getUnlockTime = (order: number) => {
+    if (!profile?.created_at) return new Date();
+    const startDate = new Date(profile.created_at);
+    const unlockDate = addDays(startDate, order - 1);
+    return setSeconds(setMinutes(setHours(unlockDate, 16), 0), 0); // 4:00 PM
+  };
+
+  const getRestrictedEndTime = (order: number) => {
+    const unlockTime = getUnlockTime(order);
+    return setSeconds(setMinutes(setHours(unlockTime, 17), 30), 0); // 5:30 PM
+  };
+
+  const isLessonUnlocked = (lesson: Lesson) => {
+    if (lesson.status === 'coming_soon') return false;
     
-    if (daysSinceReg > lesson.unlockDayOffset) return false;
-    if (daysSinceReg === lesson.unlockDayOffset && reachedTime) return false;
-    
+    // Check time unlock
+    const unlockTime = getUnlockTime(lesson.order);
+    if (isBefore(now, unlockTime)) return false;
+
+    // Check sequential unlock
+    if (lesson.order > 1) {
+      const prevLessonId = lessons[lesson.order - 2]?.id;
+      if (!profile?.completed_videos?.includes(prevLessonId)) return false;
+    }
+
     return true;
-  });
+  };
 
-  const nextUnlockTime = nextTimeLockedLesson 
-    ? getUnlockTime(new Date(profile.created_at), nextTimeLockedLesson.unlockDayOffset)
-    : null;
+  const getLessonStatus = (lesson: Lesson) => {
+    if (lesson.status === 'coming_soon') return 'Coming Soon';
+    if (profile?.completed_videos?.includes(lesson.id)) return 'Completed';
+    
+    const unlockTime = getUnlockTime(lesson.order);
+    if (isBefore(now, unlockTime)) return 'Locked';
+    
+    if (lesson.order > 1) {
+      const prevLessonId = lessons[lesson.order - 2]?.id;
+      if (!profile?.completed_videos?.includes(prevLessonId)) return 'Locked (Complete Previous)';
+    }
+
+    return 'Available';
+  };
+
+  const getCountdown = (lesson: Lesson) => {
+    const unlockTime = getUnlockTime(lesson.order);
+    const diff = differenceInSeconds(unlockTime, now);
+    if (diff <= 0) return null;
+
+    const hours = Math.floor(diff / 3600);
+    const minutes = Math.floor((diff % 3600) / 60);
+    const seconds = diff % 60;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleLessonComplete = async (lessonId: string) => {
+    if (!user || profile?.completed_videos?.includes(lessonId)) return;
+    try {
+      const newCompletedVideos = [...(profile?.completed_videos || []), lessonId];
+      const activeLessons = lessons.filter(l => l.status === 'active');
+      const progressPercentage = Math.round((newCompletedVideos.length / activeLessons.length) * 100);
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        completed_videos: newCompletedVideos,
+        progress_percentage: progressPercentage
+      });
+    } catch (error) {
+      console.error("Error completing lesson:", error);
+    }
+  };
+
+  const activeLessons = lessons.filter(l => l.status === 'active');
+  const progressPercentage = profile?.progress_percentage || 0;
+
+  const allMainLessonsCompleted = activeLessons.length > 0 && 
+    activeLessons.every(l => profile?.completed_videos?.includes(l.id));
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-stone-50 dark:bg-stone-950">
+        <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-mesh relative overflow-hidden">
-      {/* Decorative 3D Background Elements */}
-      <motion.div 
-        animate={{ y: [0, -30, 0], rotate: [0, 10, 0] }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-40 left-10 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl -z-10"
-      />
-      <motion.div 
-        animate={{ y: [0, 40, 0], x: [0, -20, 0] }}
-        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        className="absolute bottom-40 right-10 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl -z-10"
-      />
-
-      {/* Header */}
-      <header className="glass sticky top-0 z-50 border-b-0">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="h-10 w-10 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
-              <Sprout className="h-6 w-6" />
-            </div>
-            <h1 className="text-xl font-bold text-gradient hidden sm:block">
-              Organic Mushroom Farm
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 py-12 px-4 sm:px-6 lg:px-8 transition-colors">
+      <div className="max-w-5xl mx-auto">
+        <header className="mb-12 flex flex-col md:flex-row items-center justify-between gap-6">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="text-left"
+          >
+            <h1 className="text-4xl font-black text-stone-900 dark:text-white tracking-tight mb-2">
+              Organic Mushroom Farm <span className="text-purple-600">Training</span>
             </h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
-            <button onClick={logout} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-stone-500 hover:text-red-500 transition-colors">
-              <LogOut className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-      </header>
+            <p className="text-stone-600 dark:text-stone-400 text-lg">
+              Welcome back, <span className="font-bold text-stone-900 dark:text-white">{profile?.full_name || 'Student'}</span>
+            </p>
+          </motion.div>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-        {/* Sticky Instructions */}
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-3"
+          >
+            {profile?.role === 'admin' && (
+              <Link
+                to="/admin"
+                className="px-5 py-2.5 bg-stone-900 dark:bg-stone-800 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-stone-800 dark:hover:bg-stone-700 transition-all shadow-lg shadow-stone-200 dark:shadow-none"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Admin Panel
+              </Link>
+            )}
+          </motion.div>
+        </header>
+
+        {/* Progress Bar Section */}
         <motion.div 
-          initial={{ opacity: 0, y: -10 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card border-purple-200 dark:border-purple-800/50 rounded-2xl p-5 mb-8 relative overflow-hidden"
+          className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-sm mb-12"
         >
-          <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
-          <p className="text-sm sm:text-base text-purple-900 dark:text-purple-200 font-medium ml-2">
-            Please log in using the same browser where you received the login link on WhatsApp. The class will start at 4:00 PM. After completing the lesson, click 'Mark as Completed'. The next lesson will unlock automatically the next day at 4:00 PM.
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold text-stone-900 dark:text-white">Overall Progress</h2>
+            <span className="text-purple-600 dark:text-purple-400 font-black text-xl">{progressPercentage}%</span>
+          </div>
+          <div className="h-4 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPercentage}%` }}
+              className="h-full bg-gradient-to-r from-purple-600 to-indigo-600"
+            />
+          </div>
+          <p className="text-sm text-stone-500 dark:text-stone-500 mt-3 font-medium">
+            {profile?.completed_videos?.length || 0} of {activeLessons.length} lessons completed
           </p>
         </motion.div>
 
-        {/* User Profile & Progress */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-          className="glass-card rounded-3xl p-6 sm:p-8 mb-10 flex flex-col md:flex-row items-center md:items-start gap-8"
-        >
-          <div className="relative">
-            <div className="h-28 w-28 rounded-full bg-stone-200 dark:bg-stone-700 flex items-center justify-center overflow-hidden shrink-0 border-4 border-white/50 dark:border-stone-800/50 shadow-xl z-10 relative">
-              {profile.profile_photo ? (
-                <img src={profile.profile_photo} alt={profile.full_name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <UserIcon className="h-12 w-12 text-stone-400" />
-              )}
-            </div>
-            {/* 3D Ring behind avatar */}
-            <div className="absolute inset-0 -m-2 rounded-full border-2 border-purple-500/30 animate-[spin_10s_linear_infinite]"></div>
-          </div>
-          
-          <div className="flex-1 text-center md:text-left w-full">
-            <h2 className="text-3xl font-bold mb-2">{profile.full_name}</h2>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-center md:justify-start gap-2 sm:gap-4 text-sm text-stone-600 dark:text-stone-400 mb-6">
-              <span>{profile.email}</span>
-              <span className="hidden sm:inline">•</span>
-              <span className="font-mono bg-black/5 dark:bg-white/10 px-3 py-1 rounded-lg font-medium">
-                {profile.student_id}
-              </span>
-            </div>
-            
-            <div className="bg-black/5 dark:bg-white/5 rounded-2xl p-5">
-              <div className="flex justify-between text-sm mb-3">
-                <span className="font-semibold">Course Progress</span>
-                <span className="font-bold text-purple-600 dark:text-purple-400">{progressPercentage}%</span>
-              </div>
-              <div className="w-full bg-stone-200/50 dark:bg-stone-700/50 rounded-full h-3 overflow-hidden shadow-inner">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progressPercentage}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="bg-gradient-to-r from-purple-500 to-purple-400 h-full rounded-full shadow-[0_0_10px_rgba(168,85,247,0.5)]"
-                ></motion.div>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Completion Message */}
-        {allCompleted && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
+        {allMainLessonsCompleted && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass-card border-green-200 dark:border-green-800/50 rounded-2xl p-8 mb-10 text-center relative overflow-hidden"
+            className="mb-12 p-8 bg-gradient-to-br from-purple-600 to-indigo-700 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden"
           >
-            <div className="absolute inset-0 bg-green-500/5 dark:bg-green-500/10"></div>
-            <h3 className="text-2xl font-bold text-green-700 dark:text-green-400 mb-3 relative z-10">
-              Congratulations 🎉
-            </h3>
-            <p className="text-green-800 dark:text-green-200 relative z-10 text-lg">
-              You have successfully completed the Organic Mushroom Farm Training Course. We hope this training helps you start your own mushroom farming business.
-            </p>
+            <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
+              <div className="h-20 w-20 bg-white/20 rounded-3xl flex items-center justify-center backdrop-blur-md">
+                <Trophy className="h-10 w-10 text-yellow-300" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold mb-2">Congratulations! 🎉</h2>
+                <p className="text-purple-100 text-lg leading-relaxed">
+                  You have successfully completed the Organic Mushroom Farm Training Course. We hope this training helps you start your own mushroom farming business.
+                </p>
+              </div>
+            </div>
+            <div className="absolute -right-10 -bottom-10 h-40 w-40 bg-white/10 rounded-full blur-3xl" />
           </motion.div>
         )}
 
-        {/* Course Content */}
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-200/50 dark:border-stone-700/50 pb-4 gap-4">
-            <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-bold">Training Modules</h2>
-              <span className="text-sm font-medium text-stone-500 bg-black/5 dark:bg-white/10 px-3 py-1 rounded-full">
-                {completedLessons.length} / {COURSE_LESSONS.length} Completed
-              </span>
-            </div>
-            {nextUnlockTime && (
-              <CountdownTimer targetDate={nextUnlockTime} />
-            )}
-          </div>
-          
-          <div className="space-y-6">
-            {COURSE_LESSONS.map((lesson, index) => {
-              const isCompleted = completedLessons.includes(lesson.id);
-              
-              let isUnlocked = false;
-              let unlockMessage = "";
+        <div className="grid grid-cols-1 gap-6">
+          {lessons.map((lesson) => {
+            const status = getLessonStatus(lesson);
+            const unlocked = isLessonUnlocked(lesson);
+            const countdown = getCountdown(lesson);
+            const isCompleted = profile?.completed_videos?.includes(lesson.id);
+            const restrictedEnd = getRestrictedEndTime(lesson.order);
+            const isRestricted = isAfter(now, getUnlockTime(lesson.order)) && isBefore(now, restrictedEnd);
 
-              if (lesson.requiresPreviousComplete) {
-                const prevIndex = COURSE_LESSONS.findIndex(l => l.id === lesson.id) - 1;
-                const prevLesson = COURSE_LESSONS[prevIndex];
-                const prevCompleted = completedLessons.includes(prevLesson.id);
-                
-                if (prevCompleted) {
-                  isUnlocked = true;
-                } else {
-                  unlockMessage = "Complete the previous lesson to unlock.";
-                }
-              } else {
-                if (daysSinceReg > lesson.unlockDayOffset) {
-                  isUnlocked = true;
-                } else if (daysSinceReg === lesson.unlockDayOffset) {
-                  if (reachedTime) {
-                    isUnlocked = true;
-                  } else {
-                    unlockMessage = "This training will start at 4:00 PM. Please come back at the scheduled time.";
-                  }
-                } else {
-                  unlockMessage = "This lesson will unlock on the next training day at 4:00 PM.";
-                }
-              }
+            return (
+              <motion.div
+                key={lesson.id}
+                layout
+                className={`bg-white dark:bg-stone-900 rounded-3xl border transition-all overflow-hidden ${
+                  unlocked ? 'border-stone-200 dark:border-stone-800 shadow-sm' : 'border-stone-100 dark:border-stone-900 opacity-80'
+                }`}
+              >
+                <div className="p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center gap-6">
+                  <div className={`h-16 w-16 rounded-2xl flex items-center justify-center shrink-0 ${
+                    isCompleted ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : unlocked ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-600'
+                  }`}>
+                    {isCompleted ? <CheckCircle className="h-8 w-8" /> : unlocked ? <Play className="h-8 w-8" /> : <Lock className="h-8 w-8" />}
+                  </div>
 
-              return (
-                <motion.div
-                  key={lesson.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <LessonCard 
-                    lesson={lesson}
-                    isUnlocked={isUnlocked}
-                    isCompleted={isCompleted}
-                    unlockMessage={unlockMessage}
-                    userId={profile.id}
-                  />
-                </motion.div>
-              );
-            })}
-          </div>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-3 mb-2">
+                      <span className="text-xs font-bold uppercase tracking-widest text-stone-400 dark:text-stone-500">
+                        Lesson {lesson.order}
+                      </span>
+                      {isCompleted ? (
+                        <span className="text-[10px] font-bold uppercase bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                          Completed
+                        </span>
+                      ) : unlocked ? (
+                        <span className="text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                          In Progress
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold uppercase bg-stone-100 dark:bg-stone-800 text-stone-500 px-2 py-0.5 rounded-full">
+                          Not Started
+                        </span>
+                      )}
+                      {isRestricted && (
+                        <span className="text-[10px] font-bold uppercase bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> Live Restricted
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-1">{lesson.title}</h3>
+                    
+                    {status === 'Locked' && countdown && (
+                      <div className="mt-2 text-sm font-medium text-purple-600 dark:text-purple-400 flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        Class starts at 4 PM (Starts in {countdown})
+                      </div>
+                    )}
+                    
+                    {status === 'Locked (Complete Previous)' && (
+                      <p className="text-sm text-stone-500 dark:text-stone-500 mt-1">Complete previous lessons to unlock this one.</p>
+                    )}
+
+                    {lesson.status === 'coming_soon' && (
+                      <p className="text-sm text-stone-500 dark:text-stone-500 mt-1 italic">This lesson is coming soon. Stay tuned!</p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                    {unlocked ? (
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => setSelectedLesson(lesson)}
+                          className="px-6 py-3 bg-purple-600 text-white rounded-2xl font-bold hover:bg-purple-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-200 dark:shadow-none"
+                        >
+                          <Play className="h-5 w-5 fill-current" />
+                          Watch Lesson
+                        </button>
+                        {!isCompleted && (
+                          <button
+                            onClick={() => handleLessonComplete(lesson.id)}
+                            className="px-6 py-2 bg-white dark:bg-stone-800 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-900/50 rounded-xl text-sm font-bold hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all"
+                          >
+                            Mark as Completed
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="px-6 py-3 bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-600 rounded-2xl font-bold flex items-center justify-center gap-2 cursor-not-allowed">
+                        <Lock className="h-5 w-5" />
+                        Locked
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {(isCompleted || allMainLessonsCompleted) && (
+                  <div className="px-6 py-4 bg-stone-50 dark:bg-stone-800/50 border-t border-stone-100 dark:border-stone-800 flex flex-wrap gap-4 items-center">
+                    <span className="text-xs font-bold text-stone-500 dark:text-stone-500 uppercase tracking-wider">Download Resources:</span>
+                    <a 
+                      href={lesson.pdfEnglish} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 flex items-center gap-1.5"
+                    >
+                      <FileText className="h-4 w-4" />
+                      View PDF (English)
+                    </a>
+                    <a 
+                      href={lesson.pdfHindi} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 flex items-center gap-1.5"
+                    >
+                      <FileText className="h-4 w-4" />
+                      View PDF (Hindi)
+                    </a>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
         </div>
-      </main>
+      </div>
 
-      {/* Footer */}
-      <footer className="glass mt-16 py-10 border-t-0 border-t border-white/20 dark:border-white/5 relative z-10">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="text-center md:text-left">
-            <h3 className="font-bold text-lg mb-4 flex items-center justify-center md:justify-start">
-              <Sprout className="h-5 w-5 mr-2 text-purple-600" /> Support
-            </h3>
-            <div className="flex flex-col space-y-3 text-sm text-stone-600 dark:text-stone-400">
-              <a href="tel:9203544140" className="flex items-center hover:text-purple-600 transition-colors">
-                <div className="h-8 w-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center mr-3">
-                  <Phone className="h-4 w-4" />
-                </div>
-                9203544140
-              </a>
-              <a href="https://wa.me/919203544140" target="_blank" rel="noreferrer" className="flex items-center hover:text-green-600 transition-colors">
-                <div className="h-8 w-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center mr-3">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-4 w-4" />
-                </div>
-                Message on WhatsApp
-              </a>
-              <a href="mailto:sonib491@gmail.com" className="flex items-center hover:text-purple-600 transition-colors">
-                <div className="h-8 w-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center mr-3">
-                  <Mail className="h-4 w-4" />
-                </div>
-                sonib491@gmail.com
-              </a>
-            </div>
-          </div>
-          
-          <div className="text-center md:text-right">
-            <h3 className="font-bold text-lg mb-4">Follow Us</h3>
-            <div className="flex space-x-4">
-              <a href="https://www.instagram.com/organic_mushroom_farm_jabalpur" target="_blank" rel="noreferrer" className="h-10 w-10 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-stone-500 hover:text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-all">
-                <Instagram className="h-5 w-5" />
-              </a>
-              <a href="https://www.facebook.com/organic.mushroom.farm0" target="_blank" rel="noreferrer" className="h-10 w-10 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-stone-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all">
-                <Facebook className="h-5 w-5" />
-              </a>
-              <a href="https://www.youtube.com/@organicmushroomfarm" target="_blank" rel="noreferrer" className="h-10 w-10 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
-                <Youtube className="h-5 w-5" />
-              </a>
-              <a href="https://www.pinterest.com/organicmushroomfarm" target="_blank" rel="noreferrer" className="h-10 w-10 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
-                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.12.112.225.085.345-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.401.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.951-7.252 4.182 0 7.435 2.981 7.435 6.961 0 4.156-2.619 7.502-6.255 7.502-1.222 0-2.372-.635-2.764-1.385l-.752 2.868c-.271 1.033-.999 2.325-1.492 3.114 1.259.388 2.593.596 3.972.596 6.621 0 11.988-5.367 11.988-11.987C24.005 5.367 18.638 0 12.017 0z" />
-                </svg>
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <AnimatePresence>
+        {selectedLesson && (
+          <VideoPlayer
+            lesson={selectedLesson}
+            isRestricted={isAfter(now, getUnlockTime(selectedLesson.order)) && isBefore(now, getRestrictedEndTime(selectedLesson.order))}
+            onClose={() => setSelectedLesson(null)}
+            onComplete={() => handleLessonComplete(selectedLesson.id)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
