@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Lesson } from '../data/course';
 import { CheckCircle, Lock, PlayCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { isLiveClassTime } from '../lib/utils';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface LessonCardProps {
   key?: React.Key;
@@ -10,10 +12,9 @@ interface LessonCardProps {
   isCompleted: boolean;
   unlockMessage?: string;
   userId: string;
-  onMarkComplete?: () => void;
 }
 
-export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMessage, userId, onMarkComplete }: LessonCardProps) {
+export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMessage, userId }: LessonCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [marking, setMarking] = useState(false);
 
@@ -23,20 +24,12 @@ export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMess
     if (!isUnlocked || isCompleted) return;
     setMarking(true);
     try {
-      const res = await fetch('/api/progress', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ lessonId: lesson.id }),
+      await setDoc(doc(db, 'progress', `${userId}_${lesson.id}`), {
+        user_id: userId,
+        lesson_id: lesson.id,
+        completed: true,
+        completion_date: Date.now()
       });
-      if (res.ok) {
-        if (onMarkComplete) {
-          onMarkComplete();
-        }
-      } else {
-        console.error("Failed to mark complete");
-      }
     } catch (err) {
       console.error("Error marking complete", err);
     } finally {

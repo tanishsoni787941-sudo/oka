@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { COURSE_LESSONS } from '../data/course';
 import { getDaysSinceRegistration, hasReachedUnlockTime } from '../lib/utils';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import LessonCard from '../components/LessonCard';
 import { LogOut, Moon, Sun, User as UserIcon, Phone, Mail, Instagram, Facebook, Youtube } from 'lucide-react';
 
@@ -14,26 +16,15 @@ export default function Dashboard() {
   useEffect(() => {
     if (!profile) return;
     
-    const fetchProgress = async () => {
-      try {
-        const res = await fetch('/api/progress');
-        if (res.ok) {
-          const data = await res.json();
-          const completed = data.progress
-            .filter((p: any) => p.completed)
-            .map((p: any) => p.lesson_id);
-          setCompletedLessons(completed);
-        }
-      } catch (err) {
-        console.error("Error fetching progress", err);
-      }
-    };
-
-    fetchProgress();
+    const q = query(collection(db, 'progress'), where('user_id', '==', profile.id));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const completed = snapshot.docs
+        .filter(doc => doc.data().completed)
+        .map(doc => doc.data().lesson_id);
+      setCompletedLessons(completed);
+    });
     
-    // Poll for updates every 10 seconds to simulate real-time
-    const interval = setInterval(fetchProgress, 10000);
-    return () => clearInterval(interval);
+    return () => unsubscribe();
   }, [profile]);
 
   if (!profile) return null;
@@ -168,7 +159,6 @@ export default function Dashboard() {
                   isCompleted={isCompleted}
                   unlockMessage={unlockMessage}
                   userId={profile.id}
-                  onMarkComplete={() => setCompletedLessons(prev => [...prev, lesson.id])}
                 />
               );
             })}

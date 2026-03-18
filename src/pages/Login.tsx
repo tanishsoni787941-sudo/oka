@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc, runTransaction } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Leaf } from 'lucide-react';
 
@@ -12,7 +15,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { deviceId, login } = useAuth();
+  const { deviceId } = useAuth();
   const navigate = useNavigate();
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -21,25 +24,49 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/signup';
-      const body = isLogin 
-        ? { email, password, deviceId }
-        : { fullName, email, password, profilePhoto, deviceId };
+      if (isLogin) {
+        const userCred = await signInWithEmailAndPassword(auth, email, password);
+        // Update active device ID
+        await setDoc(doc(db, 'users', userCred.user.uid), {
+          active_device_id: deviceId
+        }, { merge: true });
+        navigate('/');
+      } else {
+        // Signup
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        
+        // Generate Student ID OMF-0001
+        let studentId = 'OMF-0001';
+        try {
+          await runTransaction(db, async (transaction) => {
+            const counterRef = doc(db, 'metadata', 'counters');
+            const counterDoc = await transaction.get(counterRef);
+            let nextCount = 1;
+            if (counterDoc.exists()) {
+              nextCount = (counterDoc.data().student_count || 0) + 1;
+            }
+            transaction.set(counterRef, { student_count: nextCount }, { merge: true });
+            studentId = `OMF-${String(nextCount).padStart(4, '0')}`;
+          });
+        } catch (err) {
+          console.error("Error generating student ID", err);
+          // Fallback if transaction fails
+          studentId = `OMF-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+        }
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
+        const now = Date.now();
+        await setDoc(doc(db, 'users', userCred.user.uid), {
+          id: userCred.user.uid,
+          full_name: fullName,
+          email: email,
+          student_id: studentId,
+          profile_photo: profilePhoto || '',
+          active_device_id: deviceId,
+          created_at: now
+        });
+        
+        navigate('/');
       }
-
-      login(data.user);
-      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {

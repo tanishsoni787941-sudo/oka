@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { auth, db } from '../firebase';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface UserProfile {
@@ -12,10 +15,9 @@ export interface UserProfile {
 }
 
 interface AuthContextType {
-  user: UserProfile | null;
+  user: User | null;
   profile: UserProfile | null;
   loading: boolean;
-  login: (user: UserProfile) => void;
   logout: () => Promise<void>;
   deviceId: string;
   multipleDeviceError: boolean;
@@ -24,7 +26,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [multipleDeviceError, setMultipleDeviceError] = useState(false);
@@ -39,47 +41,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch('/api/auth/me');
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data.user);
-          setProfile(data.user);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      
+      if (!currentUser) {
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      // Listen to user profile changes
+      const profileRef = doc(db, 'users', currentUser.uid);
+      const unsubProfile = onSnapshot(profileRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as UserProfile;
+          setProfile(data);
           
-          if (data.user.active_device_id && data.user.active_device_id !== deviceId) {
+          // Check for multiple device login
+          if (data.active_device_id && data.active_device_id !== deviceId) {
             setMultipleDeviceError(true);
-            await fetch('/api/auth/logout', { method: 'POST' });
-            setUser(null);
-            setProfile(null);
+            signOut(auth);
           } else {
             setMultipleDeviceError(false);
           }
         }
-      } catch (err) {
-        console.error("Error fetching profile:", err);
-      } finally {
         setLoading(false);
-      }
-    };
+      }, (error) => {
+        console.error("Error fetching profile:", error);
+        setLoading(false);
+      });
 
-    fetchUser();
+      return () => unsubProfile();
+    });
+
+    return () => unsubscribe();
   }, [deviceId]);
 
-  const login = (userData: UserProfile) => {
-    setUser(userData);
-    setProfile(userData);
-    setMultipleDeviceError(false);
-  };
-
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    setUser(null);
-    setProfile(null);
+    await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, deviceId, multipleDeviceError }}>
+    <AuthContext.Provider value={{ user, profile, loading, logout, deviceId, multipleDeviceError }}>
       {children}
     </AuthContext.Provider>
   );

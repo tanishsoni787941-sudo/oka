@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - id: string (required) - User ID
+    //   - full_name: string (required) - User's full name
+    //   - email: string (required) - User's email
+    //   - student_id: string (required) - User's student ID
+    //   - profile_photo: string (optional) - User's profile photo URL
+    //   - active_device_id: string (required) - User's active device ID
+    //   - created_at: number (required) - Timestamp of creation
+    //
+    // Collection: progress
+    // Document ID: {userId}_{lessonId}
+    // Fields:
+    //   - user_id: string (required) - User ID
+    //   - lesson_id: string (required) - Lesson ID
+    //   - completed: boolean (required) - Completion status
+    //   - completion_date: number (required) - Timestamp of completion
+    //
+    // Collection: metadata
+    // Document ID: counters
+    // Fields:
+    //   - student_count: number (optional) - Total number of students
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidUser() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['id', 'full_name', 'email', 'student_id', 'profile_photo', 'active_device_id', 'created_at']) &&
+        data.id is string &&
+        data.full_name is string && data.full_name.size() > 0 && data.full_name.size() < 100 &&
+        data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+        data.student_id is string && data.student_id.size() > 0 && data.student_id.size() < 20 &&
+        (!('profile_photo' in data) || (data.profile_photo is string && data.profile_photo.size() < 500)) &&
+        data.active_device_id is string && data.active_device_id.size() > 0 && data.active_device_id.size() < 100 &&
+        data.created_at is number;
+    }
+
+    function isValidProgress() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['user_id', 'lesson_id', 'completed', 'completion_date']) &&
+        data.user_id is string && data.user_id == request.auth.uid &&
+        data.lesson_id is string && data.lesson_id.size() > 0 && data.lesson_id.size() < 50 &&
+        data.completed is bool &&
+        data.completion_date is number;
+    }
+
+    function isValidMetadata() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['student_count']) &&
+        data.student_count is number && data.student_count >= 0;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser() && request.resource.data.id == userId;
+      allow update: if isOwner(userId) && isValidUser() && request.resource.data.id == resource.data.id && request.resource.data.created_at == resource.data.created_at;
+    }
+
+    match /progress/{progressId} {
+      allow read: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && isValidProgress() && progressId == request.auth.uid + '_' + request.resource.data.lesson_id;
+      allow update: if isAuthenticated() && isValidProgress() && resource.data.user_id == request.auth.uid && request.resource.data.user_id == resource.data.user_id && request.resource.data.lesson_id == resource.data.lesson_id;
+    }
+
+    match /metadata/counters {
+      allow read: if true;
+      allow update: if true && request.resource.data.student_count == resource.data.student_count + 1;
+      allow create: if true && request.resource.data.student_count == 1;
+    }
+  }
+}
