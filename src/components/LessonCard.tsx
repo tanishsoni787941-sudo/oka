@@ -4,6 +4,7 @@ import { CheckCircle, Lock, PlayCircle, FileText, ChevronDown, ChevronUp } from 
 import { isLiveClassTime } from '../lib/utils';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface LessonCardProps {
   key?: React.Key;
@@ -38,92 +39,107 @@ export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMess
   };
 
   return (
-    <div className={`border rounded-xl overflow-hidden mb-4 transition-all ${isUnlocked ? 'border-purple-200 dark:border-purple-900/50 bg-white dark:bg-stone-800 shadow-sm' : 'border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-900/50 opacity-75'}`}>
+    <div className={`rounded-2xl overflow-hidden mb-6 transition-all duration-300 ${isUnlocked ? 'glass-card border-purple-200/50 dark:border-purple-800/30' : 'bg-white/40 dark:bg-stone-900/40 backdrop-blur-sm border border-stone-200/50 dark:border-stone-700/50 opacity-80'}`}>
       <div 
-        className="p-4 sm:p-6 flex items-center justify-between cursor-pointer"
+        className="p-5 sm:p-6 flex items-center justify-between cursor-pointer relative overflow-hidden"
         onClick={() => isUnlocked && setExpanded(!expanded)}
       >
-        <div className="flex items-center space-x-4">
-          <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isCompleted ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : isUnlocked ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-stone-200 text-stone-500 dark:bg-stone-700 dark:text-stone-400'}`}>
-            {isCompleted ? <CheckCircle className="h-6 w-6" /> : isUnlocked ? <PlayCircle className="h-6 w-6" /> : <Lock className="h-5 w-5" />}
+        {isCompleted && (
+          <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -z-10 translate-x-10 -translate-y-10"></div>
+        )}
+        
+        <div className="flex items-center space-x-5 relative z-10">
+          <div className={`h-12 w-12 rounded-2xl flex items-center justify-center shadow-inner ${isCompleted ? 'bg-gradient-to-br from-green-400 to-green-600 text-white shadow-green-500/30' : isUnlocked ? 'bg-gradient-to-br from-purple-500 to-purple-700 text-white shadow-purple-500/30' : 'bg-stone-200 dark:bg-stone-800 text-stone-500 dark:text-stone-400'}`}>
+            {isCompleted ? <CheckCircle className="h-6 w-6" /> : isUnlocked ? <PlayCircle className="h-6 w-6" /> : <Lock className="h-6 w-6" />}
           </div>
           <div>
-            <h3 className={`text-lg font-medium ${isUnlocked ? 'text-stone-900 dark:text-white' : 'text-stone-500 dark:text-stone-400'}`}>
+            <h3 className={`text-lg sm:text-xl font-bold ${isUnlocked ? 'text-stone-900 dark:text-white' : 'text-stone-500 dark:text-stone-400'}`}>
               {lesson.title}
             </h3>
             {!isUnlocked && unlockMessage && (
-              <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">{unlockMessage}</p>
+              <p className="text-sm font-medium text-stone-500 dark:text-stone-400 mt-1">{unlockMessage}</p>
             )}
             {isCompleted && (
-              <p className="text-sm text-green-600 dark:text-green-400 mt-1">Lesson completed successfully. PDF notes are now available.</p>
+              <p className="text-sm font-medium text-green-600 dark:text-green-400 mt-1">Lesson completed successfully. PDF notes are now available.</p>
             )}
           </div>
         </div>
         {isUnlocked && (
-          <div className="text-stone-400">
-            {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          <div className={`text-stone-400 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>
+            <ChevronDown className="h-6 w-6" />
           </div>
         )}
       </div>
 
-      {isUnlocked && expanded && (
-        <div className="px-4 sm:px-6 pb-6 pt-2 border-t border-stone-100 dark:border-stone-700">
-          {lesson.videoUrl && (
-            <div className="mb-6">
-              <h4 className="text-sm font-medium text-stone-900 dark:text-white mb-2">Training Video</h4>
-              <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                <iframe 
-                  src={lesson.videoUrl} 
-                  className="w-full h-full border-0" 
-                  allow="autoplay"
-                ></iframe>
-                {isLive && (
-                  <div className="absolute inset-0 z-10 bg-transparent" title="Live class in progress. Controls are disabled until 5:30 PM."></div>
+      <AnimatePresence>
+        {isUnlocked && expanded && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 sm:px-6 pb-6 pt-2 border-t border-stone-200/50 dark:border-stone-700/50 bg-white/30 dark:bg-black/10">
+              {lesson.videoUrl && (
+                <div className="mb-8 mt-4">
+                  <h4 className="text-sm font-bold text-stone-900 dark:text-white mb-3 uppercase tracking-wider">Training Video</h4>
+                  <div className="relative aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                    <iframe 
+                      src={lesson.videoUrl} 
+                      className="w-full h-full border-0" 
+                      allow="autoplay"
+                    ></iframe>
+                    {isLive && (
+                      <div className="absolute inset-0 z-10 bg-transparent" title="Live class in progress. Controls are disabled until 5:30 PM."></div>
+                    )}
+                  </div>
+                  {lesson.password && (
+                    <p className="text-sm font-medium text-stone-600 dark:text-stone-300 mt-3 flex items-center bg-black/5 dark:bg-white/5 p-3 rounded-xl inline-block">
+                      <Lock className="h-4 w-4 mr-2 text-purple-500" />
+                      Video Password: <span className="font-mono bg-white dark:bg-black px-2 py-1 rounded-md ml-2 shadow-sm">{lesson.password}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-white/50 dark:bg-black/20 p-5 rounded-2xl border border-white/40 dark:border-white/5">
+                <div>
+                  {isCompleted ? (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-bold text-stone-900 dark:text-white uppercase tracking-wider">Study Materials (PDFs)</h4>
+                      <div className="flex flex-wrap gap-3">
+                        <a href={lesson.pdfs.english} target="_blank" rel="noreferrer" className="inline-flex items-center px-4 py-2 border border-stone-200/50 dark:border-stone-700/50 shadow-sm text-sm font-medium rounded-xl text-stone-700 dark:text-stone-200 bg-white/80 dark:bg-stone-800/80 hover:bg-white dark:hover:bg-stone-700 transition-all hover:shadow-md hover:-translate-y-0.5">
+                          <FileText className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
+                          English Notes
+                        </a>
+                        <a href={lesson.pdfs.hindi} target="_blank" rel="noreferrer" className="inline-flex items-center px-4 py-2 border border-stone-200/50 dark:border-stone-700/50 shadow-sm text-sm font-medium rounded-xl text-stone-700 dark:text-stone-200 bg-white/80 dark:bg-stone-800/80 hover:bg-white dark:hover:bg-stone-700 transition-all hover:shadow-md hover:-translate-y-0.5">
+                          <FileText className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
+                          Hindi Notes
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium text-stone-500 dark:text-stone-400 flex items-center">
+                      <Lock className="h-5 w-5 mr-2 text-stone-400" /> PDFs will unlock after marking lesson as complete.
+                    </p>
+                  )}
+                </div>
+
+                {!isCompleted && (
+                  <button
+                    onClick={handleMarkComplete}
+                    disabled={marking}
+                    className="button-3d text-white font-semibold py-3 px-6 rounded-xl flex items-center justify-center whitespace-nowrap"
+                  >
+                    {marking ? 'Updating...' : 'Mark as Completed'}
+                  </button>
                 )}
               </div>
-              {lesson.password && (
-                <p className="text-sm text-stone-500 dark:text-stone-400 mt-2">
-                  Video Password: <span className="font-mono bg-stone-100 dark:bg-stone-700 px-2 py-1 rounded">{lesson.password}</span>
-                </p>
-              )}
             </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              {isCompleted ? (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-stone-900 dark:text-white">Study Materials (PDFs)</h4>
-                  <div className="flex flex-wrap gap-3">
-                    <a href={lesson.pdfs.english} target="_blank" rel="noreferrer" className="inline-flex items-center px-3 py-1.5 border border-stone-300 dark:border-stone-600 shadow-sm text-sm font-medium rounded text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-700 hover:bg-stone-50 dark:hover:bg-stone-600">
-                      <FileText className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
-                      English Notes
-                    </a>
-                    <a href={lesson.pdfs.hindi} target="_blank" rel="noreferrer" className="inline-flex items-center px-3 py-1.5 border border-stone-300 dark:border-stone-600 shadow-sm text-sm font-medium rounded text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-700 hover:bg-stone-50 dark:hover:bg-stone-600">
-                      <FileText className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
-                      Hindi Notes
-                    </a>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-stone-500 dark:text-stone-400 flex items-center">
-                  <Lock className="h-4 w-4 mr-1" /> PDFs will unlock after marking lesson as complete.
-                </p>
-              )}
-            </div>
-
-            {!isCompleted && (
-              <button
-                onClick={handleMarkComplete}
-                disabled={marking}
-                className="inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
-              >
-                {marking ? 'Updating...' : 'Mark as Completed'}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

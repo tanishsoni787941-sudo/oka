@@ -4,7 +4,8 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'fire
 import { doc, setDoc, runTransaction } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Leaf } from 'lucide-react';
+import { Leaf, ArrowRight, Sprout } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -26,16 +27,12 @@ export default function Login() {
     try {
       if (isLogin) {
         const userCred = await signInWithEmailAndPassword(auth, email, password);
-        // Update active device ID
         await setDoc(doc(db, 'users', userCred.user.uid), {
           active_device_id: deviceId
         }, { merge: true });
         navigate('/');
       } else {
-        // Signup
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
-        
-        // Generate Student ID OMF-0001
         let studentId = 'OMF-0001';
         try {
           await runTransaction(db, async (transaction) => {
@@ -50,7 +47,6 @@ export default function Login() {
           });
         } catch (err) {
           console.error("Error generating student ID", err);
-          // Fallback if transaction fails
           studentId = `OMF-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
         }
 
@@ -75,125 +71,163 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-stone-900 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="h-16 w-16 bg-purple-600 rounded-full flex items-center justify-center">
-            <Leaf className="h-8 w-8 text-white" />
+    <div className="min-h-screen bg-gradient-mesh flex flex-col lg:flex-row overflow-hidden relative">
+      {/* Decorative 3D Elements */}
+      <motion.div 
+        animate={{ y: [0, -20, 0], rotate: [0, 5, 0] }}
+        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute top-20 left-10 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl"
+      />
+      <motion.div 
+        animate={{ y: [0, 30, 0], x: [0, -20, 0] }}
+        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+        className="absolute bottom-20 right-10 w-64 h-64 bg-orange-500/20 rounded-full blur-3xl"
+      />
+
+      {/* Left Side: Hero Section */}
+      <div className="lg:w-1/2 p-8 lg:p-16 flex flex-col justify-center relative z-10">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="max-w-xl"
+        >
+          <div className="inline-flex items-center space-x-2 bg-white/50 dark:bg-black/30 backdrop-blur-md px-4 py-2 rounded-full mb-8 border border-white/20 dark:border-white/10">
+            <Sprout className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <span className="text-sm font-medium text-stone-800 dark:text-stone-200">Next-Gen Farming</span>
           </div>
-        </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-stone-900 dark:text-white">
-          Organic Mushroom Farm
-        </h2>
-        <p className="mt-2 text-center text-sm text-stone-600 dark:text-stone-400">
-          {isLogin ? 'Sign in to your account' : 'Register for the training'}
-        </p>
+          
+          <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight mb-6 leading-tight">
+            <span className="text-gradient">Organic</span><br />
+            Mushroom Farming
+          </h1>
+          
+          <p className="text-lg text-stone-600 dark:text-stone-400 mb-10 max-w-lg leading-relaxed">
+            Join our immersive training platform. Learn sustainable techniques, track your progress, and build your own organic farm from scratch.
+          </p>
+
+          {/* 3D Floating Cards Illustration */}
+          <div className="relative h-64 w-full max-w-md hidden sm:block">
+            <motion.div 
+              animate={{ y: [0, -15, 0], rotateZ: [-5, -5, -5] }}
+              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute top-0 left-0 w-48 h-32 glass-card rounded-2xl p-4 z-20"
+            >
+              <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center mb-3">
+                <Leaf className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="h-2 w-24 bg-stone-200 dark:bg-stone-700 rounded mb-2"></div>
+              <div className="h-2 w-16 bg-stone-200 dark:bg-stone-700 rounded"></div>
+            </motion.div>
+            
+            <motion.div 
+              animate={{ y: [0, 15, 0], rotateZ: [5, 5, 5] }}
+              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+              className="absolute top-12 right-0 w-56 h-40 glass-card rounded-2xl p-4 z-10"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <div className="h-3 w-20 bg-stone-200 dark:bg-stone-700 rounded"></div>
+                <div className="h-6 w-6 rounded-full bg-green-100 dark:bg-green-900/50"></div>
+              </div>
+              <div className="space-y-2">
+                <div className="h-2 w-full bg-stone-200 dark:bg-stone-700 rounded"></div>
+                <div className="h-2 w-full bg-stone-200 dark:bg-stone-700 rounded"></div>
+                <div className="h-2 w-2/3 bg-stone-200 dark:bg-stone-700 rounded"></div>
+              </div>
+            </motion.div>
+          </div>
+        </motion.div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white dark:bg-stone-800 py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-stone-200 dark:border-stone-700">
-          <form className="space-y-6" onSubmit={handleAuth}>
-            {!isLogin && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
+      {/* Right Side: Auth Form */}
+      <div className="lg:w-1/2 p-4 sm:p-8 lg:p-16 flex items-center justify-center relative z-10">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="w-full max-w-md"
+        >
+          <div className="glass-card rounded-3xl p-8 sm:p-10">
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold text-stone-900 dark:text-white mb-2">
+                {isLogin ? 'Welcome back' : 'Create account'}
+              </h2>
+              <p className="text-stone-500 dark:text-stone-400">
+                {isLogin ? 'Enter your details to access your courses.' : 'Start your farming journey today.'}
+              </p>
+            </div>
+
+            <form className="space-y-5" onSubmit={handleAuth}>
+              {!isLogin && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                  <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1">
                     Full Name
                   </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="appearance-none block w-full px-3 py-2 border border-stone-300 dark:border-stone-600 rounded-md shadow-sm placeholder-stone-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm dark:bg-stone-700 dark:text-white"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
-                    Profile Photo URL (Optional)
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="url"
-                      value={profilePhoto}
-                      onChange={(e) => setProfilePhoto(e.target.value)}
-                      className="appearance-none block w-full px-3 py-2 border border-stone-300 dark:border-stone-600 rounded-md shadow-sm placeholder-stone-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm dark:bg-stone-700 dark:text-white"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/50 dark:bg-black/20 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all outline-none dark:text-white"
+                    placeholder="John Doe"
+                  />
+                </motion.div>
+              )}
 
-            <div>
-              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
-                Email address
-              </label>
-              <div className="mt-1">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  Email address
+                </label>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-stone-300 dark:border-stone-600 rounded-md shadow-sm placeholder-stone-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm dark:bg-stone-700 dark:text-white"
+                  className="w-full px-4 py-3 bg-white/50 dark:bg-black/20 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all outline-none dark:text-white"
+                  placeholder="you@example.com"
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
-                Password
-              </label>
-              <div className="mt-1">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  Password
+                </label>
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-stone-300 dark:border-stone-600 rounded-md shadow-sm placeholder-stone-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm dark:bg-stone-700 dark:text-white"
+                  className="w-full px-4 py-3 bg-white/50 dark:bg-black/20 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all outline-none dark:text-white"
+                  placeholder="••••••••"
                 />
               </div>
-            </div>
 
-            {error && (
-              <div className="text-red-600 text-sm bg-red-50 dark:bg-red-900/30 p-3 rounded-md">
-                {error}
-              </div>
-            )}
+              {error && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-900/50">
+                  {error}
+                </motion.div>
+              )}
 
-            <div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
+                className="w-full button-3d text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center group"
               >
-                {loading ? 'Please wait...' : (isLogin ? 'Sign in' : 'Register')}
+                {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+                {!loading && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />}
               </button>
-            </div>
-          </form>
+            </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-stone-300 dark:border-stone-600" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white dark:bg-stone-800 text-stone-500">
-                  {isLogin ? 'New to the platform?' : 'Already have an account?'}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6">
+            <div className="mt-8 text-center">
               <button
                 onClick={() => setIsLogin(!isLogin)}
-                className="w-full flex justify-center py-2 px-4 border border-stone-300 dark:border-stone-600 rounded-md shadow-sm text-sm font-medium text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-700 hover:bg-stone-50 dark:hover:bg-stone-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                className="text-sm text-stone-500 dark:text-stone-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
               >
-                {isLogin ? 'Create an account' : 'Sign in instead'}
+                {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );
