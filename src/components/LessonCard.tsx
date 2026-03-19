@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lesson } from '../data/course';
-import { CheckCircle, Lock, PlayCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, Lock, PlayCircle, FileText, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { isLiveClassTime } from '../lib/utils';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -18,6 +18,8 @@ interface LessonCardProps {
 export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMessage, userId }: LessonCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [englishDownloaded, setEnglishDownloaded] = useState(false);
+  const [hindiDownloaded, setHindiDownloaded] = useState(false);
 
   const isLive = isLiveClassTime();
 
@@ -37,6 +39,12 @@ export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMess
       setMarking(false);
     }
   };
+
+  useEffect(() => {
+    if (englishDownloaded && hindiDownloaded && !isCompleted && !marking && isUnlocked) {
+      handleMarkComplete();
+    }
+  }, [englishDownloaded, hindiDownloaded, isCompleted, marking, isUnlocked]);
 
   return (
     <div className={`rounded-2xl overflow-hidden mb-6 transition-all duration-300 ${isUnlocked ? 'glass-card border-purple-200/50 dark:border-purple-800/30' : 'bg-white/40 dark:bg-stone-900/40 backdrop-blur-sm border border-stone-200/50 dark:border-stone-700/50 opacity-80'}`}>
@@ -105,17 +113,46 @@ export default function LessonCard({ lesson, isUnlocked, isCompleted, unlockMess
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-white/50 dark:bg-black/20 p-5 rounded-2xl border border-white/40 dark:border-white/5">
                 <div>
-                  {isCompleted ? (
+                  {isUnlocked ? (
                     <div className="space-y-3">
-                      <h4 className="text-sm font-bold text-stone-900 dark:text-white uppercase tracking-wider">Study Materials (PDFs)</h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-stone-900 dark:text-white uppercase tracking-wider">Study Materials (PDFs)</h4>
+                        {!isCompleted && (englishDownloaded || hindiDownloaded) && (
+                          <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-full animate-pulse">
+                            {englishDownloaded && hindiDownloaded ? 'Completing...' : 'Download both to complete'}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-3">
-                        <a href={lesson.pdfs.english} target="_blank" rel="noreferrer" className="inline-flex items-center px-4 py-2 border border-stone-200/50 dark:border-stone-700/50 shadow-sm text-sm font-medium rounded-xl text-stone-700 dark:text-stone-200 bg-white/80 dark:bg-stone-800/80 hover:bg-white dark:hover:bg-stone-700 transition-all hover:shadow-md hover:-translate-y-0.5">
-                          <FileText className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
+                        <a 
+                          href={lesson.pdfs.english} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          onClick={() => !isCompleted && setEnglishDownloaded(true)}
+                          className={`inline-flex items-center px-4 py-2 border shadow-sm text-sm font-medium rounded-xl transition-all hover:shadow-md hover:-translate-y-0.5 ${
+                            englishDownloaded || isCompleted 
+                              ? 'bg-green-50 dark:bg-green-900/20 border-green-200/50 dark:border-green-800/30 text-green-700 dark:text-green-300' 
+                              : 'bg-white/80 dark:bg-stone-800/80 border-stone-200/50 dark:border-stone-700/50 text-stone-700 dark:text-stone-200 hover:bg-white dark:hover:bg-stone-700'
+                          }`}
+                        >
+                          <FileText className={`h-5 w-5 mr-2 ${englishDownloaded || isCompleted ? 'text-green-500' : 'text-purple-600 dark:text-purple-400'}`} />
                           English Notes
+                          {(englishDownloaded || isCompleted) && <CheckCircle className="h-4 w-4 ml-2 text-green-500" />}
                         </a>
-                        <a href={lesson.pdfs.hindi} target="_blank" rel="noreferrer" className="inline-flex items-center px-4 py-2 border border-stone-200/50 dark:border-stone-700/50 shadow-sm text-sm font-medium rounded-xl text-stone-700 dark:text-stone-200 bg-white/80 dark:bg-stone-800/80 hover:bg-white dark:hover:bg-stone-700 transition-all hover:shadow-md hover:-translate-y-0.5">
-                          <FileText className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
+                        <a 
+                          href={lesson.pdfs.hindi} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          onClick={() => !isCompleted && setHindiDownloaded(true)}
+                          className={`inline-flex items-center px-4 py-2 border shadow-sm text-sm font-medium rounded-xl transition-all hover:shadow-md hover:-translate-y-0.5 ${
+                            hindiDownloaded || isCompleted 
+                              ? 'bg-green-50 dark:bg-green-900/20 border-green-200/50 dark:border-green-800/30 text-green-700 dark:text-green-300' 
+                              : 'bg-white/80 dark:bg-stone-800/80 border-stone-200/50 dark:border-stone-700/50 text-stone-700 dark:text-stone-200 hover:bg-white dark:hover:bg-stone-700'
+                          }`}
+                        >
+                          <FileText className={`h-5 w-5 mr-2 ${hindiDownloaded || isCompleted ? 'text-green-500' : 'text-purple-600 dark:text-purple-400'}`} />
                           Hindi Notes
+                          {(hindiDownloaded || isCompleted) && <CheckCircle className="h-4 w-4 ml-2 text-green-500" />}
                         </a>
                       </div>
                     </div>

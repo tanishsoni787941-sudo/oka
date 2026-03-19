@@ -19,7 +19,7 @@ export default function AIChatbot() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', text: 'Namaste! Main aapka expert mushroom farming trainer hoon. Aap mujhse mushroom cultivation, compost, temperature, ya business setup ke baare mein kuch bhi pooch sakte hain. Main Hindi aur English mix mein aapki madad karunga. 😊' }
+    { role: 'model', text: 'Namaste! Main Organic Mushroom Farm ka expert assistant hoon. Main aapko mushroom cultivation ke har step mein guide karunga—chahe wo compost banana ho, spawning ho, ya harvesting. Aap mujhse cost, setup, ya kisi bhi problem ke baare mein pooch sakte hain. Kaise shuru karein? 😊' }
   ]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -47,11 +47,40 @@ export default function AIChatbot() {
         contents: [
           {
             role: "user",
-            parts: [{ text: `You are an expert mushroom farming trainer. Help users learn mushroom cultivation in simple Hindi and English (Hinglish). Provide practical, step-by-step advice. Keep a friendly, helpful, and "किसान-friendly" tone. Answer the following question: ${text}` }]
+            parts: [{ text }]
           }
         ],
         config: {
-          systemInstruction: "You are an expert mushroom farming trainer. Help users learn mushroom cultivation in simple Hindi and English. Provide practical, step-by-step advice. Use a friendly and encouraging tone.",
+          systemInstruction: `You are an expert Organic Mushroom Farming Assistant for a training platform called "Organic Mushroom Farm". 
+          Your role is to guide users (farmers, beginners, and students) step-by-step in mushroom cultivation.
+          
+          Your responsibilities:
+          1. Explain mushroom farming in simple, practical language.
+          2. Provide step-by-step cultivation methods (compost, spawning, incubation, harvesting).
+          3. Suggest required equipment and setup (low-cost and professional both).
+          4. Give cost, profit estimation, and business guidance.
+          5. Identify and solve common problems (diseases, contamination, low yield).
+          6. Recommend best mushroom types (Oyster, Button, Milky) based on season and location.
+          7. Provide daily routine and training guidance.
+          8. Help users scale from small farming to commercial level.
+          
+          Behavior rules:
+          - Always respond in a clear, structured format.
+          - Use bullet points or steps wherever possible.
+          - Keep answers practical, not theoretical.
+          - If user asks in Hindi, reply in Hindi.
+          - If user asks in English, reply in English.
+          - Be friendly but professional like an agriculture trainer.
+          
+          Extra features:
+          - If user asks about "cost", give approximate Indian pricing (₹).
+          - If user asks "how to start", give beginner roadmap.
+          - If user asks "problem", give cause + solution.
+          
+          Avoid:
+          - Do not give vague or generic answers.
+          - Do not say "consult expert" — YOU are the expert.
+          - Do not go off-topic.`,
         }
       });
 

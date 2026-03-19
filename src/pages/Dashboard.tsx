@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [now, setNow] = useState(new Date());
+  const [downloadedPdfs, setDownloadedPdfs] = useState<Record<string, { english: boolean; hindi: boolean }>>({});
 
   const handleLogout = async () => {
     try {
@@ -124,6 +125,21 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Error completing lesson:", error);
     }
+  };
+
+  const handlePdfDownload = (lessonId: string, lang: 'english' | 'hindi') => {
+    if (profile?.completed_videos?.includes(lessonId)) return;
+
+    setDownloadedPdfs(prev => {
+      const current = prev[lessonId] || { english: false, hindi: false };
+      const updated = { ...current, [lang]: true };
+      
+      if (updated.english && updated.hindi) {
+        handleLessonComplete(lessonId);
+      }
+      
+      return { ...prev, [lessonId]: updated };
+    });
   };
 
   const activeLessons = lessons.filter(l => l.status === 'active');
@@ -311,27 +327,48 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {(isCompleted || allMainLessonsCompleted) && (
+                {(unlocked || isCompleted || allMainLessonsCompleted) && (
                   <div className="px-6 py-4 bg-stone-50 dark:bg-stone-800/50 border-t border-stone-100 dark:border-stone-800 flex flex-wrap gap-4 items-center">
-                    <span className="text-xs font-bold text-stone-500 dark:text-stone-500 uppercase tracking-wider">Download Resources:</span>
-                    <a 
-                      href={lesson.pdfEnglish} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 flex items-center gap-1.5"
-                    >
-                      <FileText className="h-4 w-4" />
-                      View PDF (English)
-                    </a>
-                    <a 
-                      href={lesson.pdfHindi} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 flex items-center gap-1.5"
-                    >
-                      <FileText className="h-4 w-4" />
-                      View PDF (Hindi)
-                    </a>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full">
+                      <span className="text-xs font-bold text-stone-500 dark:text-stone-500 uppercase tracking-wider">Download Resources:</span>
+                      <div className="flex flex-wrap gap-4">
+                        <a 
+                          href={lesson.pdfEnglish} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={() => handlePdfDownload(lesson.id, 'english')}
+                          className={`text-sm font-bold flex items-center gap-1.5 transition-colors ${
+                            (downloadedPdfs[lesson.id]?.english || isCompleted) 
+                              ? 'text-green-600 dark:text-green-400' 
+                              : 'text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300'
+                          }`}
+                        >
+                          <FileText className="h-4 w-4" />
+                          View PDF (English)
+                          {(downloadedPdfs[lesson.id]?.english || isCompleted) && <CheckCircle className="h-3 w-3" />}
+                        </a>
+                        <a 
+                          href={lesson.pdfHindi} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={() => handlePdfDownload(lesson.id, 'hindi')}
+                          className={`text-sm font-bold flex items-center gap-1.5 transition-colors ${
+                            (downloadedPdfs[lesson.id]?.hindi || isCompleted) 
+                              ? 'text-green-600 dark:text-green-400' 
+                              : 'text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300'
+                          }`}
+                        >
+                          <FileText className="h-4 w-4" />
+                          View PDF (Hindi)
+                          {(downloadedPdfs[lesson.id]?.hindi || isCompleted) && <CheckCircle className="h-3 w-3" />}
+                        </a>
+                      </div>
+                      {!isCompleted && (downloadedPdfs[lesson.id]?.english || downloadedPdfs[lesson.id]?.hindi) && (
+                        <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-full animate-pulse ml-auto">
+                          {downloadedPdfs[lesson.id]?.english && downloadedPdfs[lesson.id]?.hindi ? 'Completing...' : 'Download both to complete'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </motion.div>
