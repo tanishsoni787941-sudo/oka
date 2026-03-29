@@ -1,58 +1,71 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth, UserProfile } from '../contexts/AuthContext';
 import { Leaf, ArrowRight, Sprout, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Canvas } from '@react-three/fiber';
 import MushroomModel from '../components/MushroomModel';
-import { v4 as uuidv4 } from 'uuid';
+import { auth, db } from '../firebase';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function Signup() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { deviceId, login } = useAuth();
   const navigate = useNavigate();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
+    
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const users: UserProfile[] = JSON.parse(localStorage.getItem('mock_users') || '[]');
-      
-      if (users.find(u => u.email === email)) {
-        setError('This email is already in use. Try logging in.');
-        setLoading(false);
-        return;
-      }
+      // 1. Create user in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-      const newUser: UserProfile = {
-        id: uuidv4(),
-        full_name: name,
+      // 2. Update profile with name
+      await updateProfile(user, { displayName: name });
+
+      // 3. Save user data in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        name: name,
         email: email,
-        role: 'student',
+        role: 'user',
+        status: 'active',
         created_at: Date.now(),
-        active_device_id: deviceId,
         completed_videos: [],
-        progress_percentage: 0,
-        is_blocked: false,
-        student_id: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
-        profile_photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`
-      };
+        progress_percentage: 0
+      });
 
-      users.push(newUser);
-      localStorage.setItem('mock_users', JSON.stringify(users));
-
-      await login(email);
-      navigate('/');
+      setSuccess('Account created successfully! Redirecting...');
+      
+      // Redirect to dashboard after short delay
+      setTimeout(() => {
+        navigate('/');
+      }, 1500);
+      
     } catch (err: any) {
       console.error("Signup error:", err);
-      setError(err.message || 'Signup failed. Please try again.');
+      if (err.code === 'auth/email-already-in-use') {
+        setError('This email is already in use. Try logging in.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Invalid email format.');
+      } else {
+        setError(err.message || 'Signup failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -173,6 +186,12 @@ export default function Signup() {
               {error && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-900/50">
                   {error}
+                </motion.div>
+              )}
+
+              {success && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-green-600 text-sm bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-100 dark:border-green-900/50">
+                  {success}
                 </motion.div>
               )}
 

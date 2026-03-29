@@ -5,6 +5,8 @@ import { Video, Save, Loader2, CheckCircle, AlertCircle, ChevronLeft, LogOut, Us
 import { motion, AnimatePresence } from 'motion/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
+import { db } from '../firebase';
+import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 type AdminTab = 'content' | 'users' | 'messages';
 
@@ -45,7 +47,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    const fetchData = () => {
+    const fetchData = async () => {
       setLoading(true);
       setMessage(null);
       try {
@@ -58,13 +60,15 @@ export default function Admin() {
           setLessons(storedLessons);
         }
 
-        // Fetch Users
-        const storedUsers = JSON.parse(localStorage.getItem('mock_users') || '[]');
-        setUsers(storedUsers);
+        // Fetch Users from Firestore
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const usersData = usersSnapshot.docs.map(doc => doc.data() as UserProfile);
+        setUsers(usersData);
 
-        // Fetch Messages
-        const storedMessages = JSON.parse(localStorage.getItem('mock_messages') || '[]');
-        setMessages(storedMessages);
+        // Fetch Messages from Firestore
+        const messagesSnapshot = await getDocs(collection(db, 'messages'));
+        const messagesData = messagesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ContactMessage));
+        setMessages(messagesData);
       } catch (error: any) {
         setMessage({ type: 'error', text: "Error fetching data: " + error.message });
       } finally {
@@ -98,12 +102,12 @@ export default function Admin() {
     }
   };
 
-  const toggleUserBlock = async (userId: string, currentStatus: boolean) => {
+  const toggleUserBlock = async (userId: string, currentStatus: string) => {
     try {
-      const updatedUsers = users.map(u => u.id === userId ? { ...u, is_blocked: !currentStatus } : u);
-      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
-      setUsers(updatedUsers);
-      setMessage({ type: 'success', text: `User ${!currentStatus ? 'blocked' : 'unblocked'} successfully.` });
+      const newStatus = currentStatus === 'blocked' ? 'active' : 'blocked';
+      await updateDoc(doc(db, 'users', userId), { status: newStatus });
+      setUsers(users.map(u => u.uid === userId ? { ...u, status: newStatus } : u));
+      setMessage({ type: 'success', text: `User ${newStatus === 'blocked' ? 'blocked' : 'unblocked'} successfully.` });
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || "Failed to update user status." });
     }
@@ -111,9 +115,8 @@ export default function Admin() {
 
   const deleteUser = async (userId: string) => {
     try {
-      const updatedUsers = users.filter(u => u.id !== userId);
-      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
-      setUsers(updatedUsers);
+      await deleteDoc(doc(db, 'users', userId));
+      setUsers(users.filter(u => u.uid !== userId));
       setMessage({ type: 'success', text: "User deleted successfully." });
       setShowDeleteConfirm(null);
     } catch (error: any) {
@@ -123,73 +126,26 @@ export default function Admin() {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const trimmedEmail = newUser.email.trim().toLowerCase();
-    const trimmedName = newUser.name.trim();
-    const trimmedPassword = newUser.password.trim();
+    setMessage({ type: 'error', text: "Creating users from admin panel is not fully supported yet. Please use the signup page." });
+  };
 
-    if (!trimmedEmail || !trimmedName || !trimmedPassword) {
-      setMessage({ type: 'error', text: "All fields are required." });
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-      setMessage({ type: 'error', text: "Invalid email format." });
-      return;
-    }
-
-    if (trimmedPassword.length < 6) {
-      setMessage({ type: 'error', text: "Password must be at least 6 characters long." });
-      return;
-    }
-
-    setCreating(true);
-    setMessage(null);
+  const toggleMessageRead = async (messageId: string, currentStatus: boolean) => {
     try {
-      if (users.find(u => u.email === trimmedEmail)) {
-        throw new Error("Email already exists.");
-      }
-
-      const newStudent: UserProfile = {
-        id: uuidv4(),
-        full_name: trimmedName,
-        email: trimmedEmail,
-        role: 'student',
-        created_at: Date.now(),
-        active_device_id: '',
-        completed_videos: [],
-        progress_percentage: 0,
-        is_blocked: false,
-        student_id: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
-        profile_photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${trimmedEmail}`
-      };
-
-      const updatedUsers = [...users, newStudent];
-      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
-      setUsers(updatedUsers);
-
-      setMessage({ type: 'success', text: "User created successfully!" });
-      setShowCreateModal(false);
-      setNewUser({ name: '', email: '', password: '' });
+      await updateDoc(doc(db, 'messages', messageId), { read: !currentStatus });
+      setMessages(messages.map(m => m.id === messageId ? { ...m, read: !currentStatus } : m));
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || "Failed to create user." });
-    } finally {
-      setCreating(false);
+      setMessage({ type: 'error', text: error.message || "Failed to update message status." });
     }
   };
 
-  const toggleMessageRead = (messageId: string, currentStatus: boolean) => {
-    const updatedMessages = messages.map(m => m.id === messageId ? { ...m, read: !currentStatus } : m);
-    localStorage.setItem('mock_messages', JSON.stringify(updatedMessages));
-    setMessages(updatedMessages);
-  };
-
-  const deleteMessage = (messageId: string) => {
-    const updatedMessages = messages.filter(m => m.id !== messageId);
-    localStorage.setItem('mock_messages', JSON.stringify(updatedMessages));
-    setMessages(updatedMessages);
-    setMessage({ type: 'success', text: "Message deleted successfully." });
+  const deleteMessage = async (messageId: string) => {
+    try {
+      await deleteDoc(doc(db, 'messages', messageId));
+      setMessages(messages.filter(m => m.id !== messageId));
+      setMessage({ type: 'success', text: "Message deleted successfully." });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || "Failed to delete message." });
+    }
   };
 
   if (loading) {
@@ -429,20 +385,20 @@ export default function Admin() {
                   </thead>
                   <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                     {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                      <tr key={u.uid} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center font-bold">
-                              {u.full_name?.charAt(0) || 'U'}
+                              {u.name?.charAt(0) || 'U'}
                             </div>
                             <div>
-                              <p className="font-bold text-stone-900 dark:text-white">{u.full_name}</p>
+                              <p className="font-bold text-stone-900 dark:text-white">{u.name}</p>
                               <p className="text-xs text-stone-500 dark:text-stone-500 capitalize">{u.role}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <p className="text-sm font-medium text-stone-700 dark:text-stone-300">{u.id}</p>
+                          <p className="text-sm font-medium text-stone-700 dark:text-stone-300">{u.uid}</p>
                           <p className="text-xs text-stone-500 dark:text-stone-500">{u.email}</p>
                         </td>
                         <td className="px-6 py-4">
@@ -457,7 +413,7 @@ export default function Admin() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          {u.is_blocked ? (
+                          {u.status === 'blocked' ? (
                             <span className="text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full">Blocked</span>
                           ) : (
                             <span className="text-[10px] font-bold uppercase bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">Active</span>
@@ -466,18 +422,18 @@ export default function Admin() {
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => toggleUserBlock(u.id, u.is_blocked)}
-                              title={u.is_blocked ? "Unblock User" : "Block User"}
+                              onClick={() => toggleUserBlock(u.uid, u.status)}
+                              title={u.status === 'blocked' ? "Unblock User" : "Block User"}
                               className={`p-2 rounded-lg transition-all ${
-                                u.is_blocked 
+                                u.status === 'blocked' 
                                   ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 hover:bg-green-100' 
                                   : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 hover:bg-orange-100'
                               }`}
                             >
-                              {u.is_blocked ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                              {u.status === 'blocked' ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
                             </button>
                             <button
-                              onClick={() => setShowDeleteConfirm(u.id)}
+                              onClick={() => setShowDeleteConfirm(u.uid)}
                               title="Delete User"
                               className="p-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 transition-all"
                             >

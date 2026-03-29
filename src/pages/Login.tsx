@@ -5,6 +5,9 @@ import { Leaf, ArrowRight, Sprout } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Canvas } from '@react-three/fiber';
 import MushroomModel from '../components/MushroomModel';
+import { auth, db } from '../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -12,7 +15,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login, authError } = useAuth();
+  const { authError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,11 +30,28 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(email);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Check Firestore users collection
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if (userData.status === 'blocked') {
+          throw new Error("Your account has been blocked by admin.");
+        }
+      }
+
       navigate('/');
     } catch (err: any) {
       console.error("Login error:", err);
-      setError(err.message || 'Authentication failed');
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+      } else {
+        setError(err.message || 'Authentication failed');
+      }
     } finally {
       setLoading(false);
     }

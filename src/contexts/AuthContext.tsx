@@ -1,162 +1,97 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import { auth, db } from '../firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export interface UserProfile {
-  id: string;
-  full_name: string;
+  uid: string;
+  name: string;
   email: string;
-  student_id: string;
-  profile_photo: string;
-  active_device_id: string;
-  created_at: number; // timestamp
   role: 'admin' | 'user' | 'student';
-  is_blocked: boolean;
-  completed_videos: string[];
-  progress_percentage: number;
+  status: 'active' | 'blocked';
+  created_at: number;
+  completed_videos?: string[];
+  progress_percentage?: number;
 }
 
 interface AuthContextType {
-  user: { uid: string; email: string } | null;
+  user: User | null;
   profile: UserProfile | null;
   loading: boolean;
   logout: () => Promise<void>;
-  deviceId: string;
-  multipleDeviceError: boolean;
   authError: string | null;
-  login: (email: string) => Promise<void>;
+  multipleDeviceError: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<{ uid: string; email: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [multipleDeviceError, setMultipleDeviceError] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  
-  const [deviceId] = useState(() => {
-    let id = localStorage.getItem('omf_device_id');
-    if (!id) {
-      id = uuidv4();
-      localStorage.setItem('omf_device_id', id);
-    }
-    return id;
-  });
-
-  // Initialize mock admin if not exists
-  useEffect(() => {
-    const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
-    if (users.length === 0) {
-      const adminUser: UserProfile = {
-        id: 'admin-123',
-        full_name: 'Admin User',
-        email: 'admin@example.com',
-        student_id: 'ADMIN001',
-        profile_photo: '',
-        active_device_id: '',
-        created_at: Date.now(),
-        role: 'admin',
-        is_blocked: false,
-        completed_videos: [],
-        progress_percentage: 0
-      };
-      const normalUser: UserProfile = {
-        id: 'user-456',
-        full_name: 'Test User',
-        email: 'user@example.com',
-        student_id: 'USER001',
-        profile_photo: '',
-        active_device_id: '',
-        created_at: Date.now(),
-        role: 'user',
-        is_blocked: false,
-        completed_videos: [],
-        progress_percentage: 0
-      };
-      localStorage.setItem('mock_users', JSON.stringify([adminUser, normalUser]));
-    }
-  }, []);
+  const [multipleDeviceError, setMultipleDeviceError] = useState(false);
 
   useEffect(() => {
-    const checkAuth = () => {
-      const storedUserId = localStorage.getItem('auth_user_id');
-      if (!storedUserId) {
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-
-      const users: UserProfile[] = JSON.parse(localStorage.getItem('mock_users') || '[]');
-      const foundUser = users.find(u => u.id === storedUserId);
-
-      if (foundUser) {
-        if (foundUser.is_blocked) {
-          setAuthError("Your account has been blocked by admin.");
-          localStorage.removeItem('auth_user_id');
-          setUser(null);
-          setProfile(null);
-        } else {
-          setUser({ uid: foundUser.id, email: foundUser.email });
-          setProfile(foundUser);
-          setAuthError(null);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      
+      if (firebaseUser) {
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserProfile;
+            if (userData.status === 'blocked') {
+              setAuthError("Your account has been blocked by admin.");
+              await signOut(auth);
+              setUser(null);
+              setProfile(null);
+            } else {
+              setProfile(userData);
+              setAuthError(null);
+            }
+          } else {
+            // If user doc doesn't exist, create it (fallback)
+            const newProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+              email: firebaseUser.email || '',
+              role: 'user',
+              status: 'active',
+              created_at: Date.now(),
+              completed_videos: [],
+              progress_percentage: 0
+            };
+            await setDoc(userDocRef, newProfile);
+            setProfile(newProfile);
+          }
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+          setAuthError("Failed to load user profile.");
         }
       } else {
-        localStorage.removeItem('auth_user_id');
-        setUser(null);
         setProfile(null);
       }
+      
       setLoading(false);
-    };
+    });
 
-    checkAuth();
-    // Listen for storage changes to sync across tabs
-    window.addEventListener('storage', checkAuth);
-    return () => window.removeEventListener('storage', checkAuth);
+    return () => unsubscribe();
   }, []);
 
-  const login = async (email: string) => {
-    const users: UserProfile[] = JSON.parse(localStorage.getItem('mock_users') || '[]');
-    let foundUser = users.find(u => u.email === email);
-    
-    if (!foundUser) {
-      // Auto-create user for seamless prototype experience
-      foundUser = {
-        id: uuidv4(),
-        full_name: email.split('@')[0],
-        email: email,
-        role: 'student',
-        created_at: Date.now(),
-        active_device_id: deviceId,
-        completed_videos: [],
-        progress_percentage: 0,
-        is_blocked: false,
-        student_id: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
-        profile_photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`
-      };
-      users.push(foundUser);
-      localStorage.setItem('mock_users', JSON.stringify(users));
-    }
-
-    if (foundUser.is_blocked) {
-      throw new Error("Your account has been blocked by admin.");
-    }
-    localStorage.setItem('auth_user_id', foundUser.id);
-    setUser({ uid: foundUser.id, email: foundUser.email });
-    setProfile(foundUser);
-    setAuthError(null);
-  };
-
   const logout = async () => {
-    localStorage.removeItem('auth_user_id');
-    setUser(null);
-    setProfile(null);
-    setAuthError(null);
+    try {
+      await signOut(auth);
+      setAuthError(null);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, logout, login, deviceId, multipleDeviceError, authError }}>
+    <AuthContext.Provider value={{ user, profile, loading, logout, authError, multipleDeviceError }}>
       {children}
     </AuthContext.Provider>
   );

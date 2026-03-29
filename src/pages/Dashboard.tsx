@@ -19,6 +19,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import VideoPlayer from '../components/VideoPlayer';
 import { format, addDays, isAfter, isBefore, setHours, setMinutes, setSeconds, differenceInSeconds } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
+import { db } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 export default function Dashboard() {
   const { user, profile, logout } = useAuth();
@@ -124,15 +126,11 @@ export default function Dashboard() {
       const activeLessons = lessons.filter(l => l.status === 'active');
       const progressPercentage = Math.round((newCompletedVideos.length / activeLessons.length) * 100);
 
-      const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
-      const updatedUsers = users.map((u: any) => 
-        u.id === user.uid 
-          ? { ...u, completed_videos: newCompletedVideos, progress_percentage: progressPercentage } 
-          : u
-      );
-      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
-      // Trigger storage event to update AuthContext
-      window.dispatchEvent(new Event('storage'));
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        completed_videos: newCompletedVideos,
+        progress_percentage: progressPercentage
+      });
     } catch (error) {
       console.error("Error completing lesson:", error);
     }
@@ -180,7 +178,7 @@ export default function Dashboard() {
               Organic Mushroom Farm <span className="text-purple-600">Training</span>
             </h1>
             <p className="text-stone-600 dark:text-stone-400 text-lg">
-              Welcome back, <span className="font-bold text-stone-900 dark:text-white">{profile?.full_name || 'Student'}</span>
+              Welcome back, <span className="font-bold text-stone-900 dark:text-white">{profile?.name || 'Student'}</span>
             </p>
           </motion.div>
 

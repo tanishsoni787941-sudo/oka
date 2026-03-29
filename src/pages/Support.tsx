@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, Mail, MessageCircle, MapPin, Send, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import { Phone, Mail, MessageCircle, MapPin, Send, ChevronDown, ChevronUp, CheckCircle, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { db } from '../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 
 export default function Support() {
   const [showForm, setShowForm] = useState(false);
@@ -9,6 +11,7 @@ export default function Support() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const contactMethods = [
     { name: 'Phone Support', value: '9203544140', icon: <Phone className="h-6 w-6" />, url: 'tel:9203544140', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' },
@@ -17,12 +20,13 @@ export default function Support() {
     { name: 'Location', value: 'Jabalpur, Madhya Pradesh', icon: <MapPin className="h-6 w-6" />, url: 'https://maps.google.com/?q=Jabalpur', color: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !message) return;
 
+    setIsSubmitting(true);
+
     const newMessage = {
-      id: uuidv4(),
       name,
       email,
       message,
@@ -30,18 +34,23 @@ export default function Support() {
       read: false
     };
 
-    const existingMessages = JSON.parse(localStorage.getItem('mock_messages') || '[]');
-    localStorage.setItem('mock_messages', JSON.stringify([...existingMessages, newMessage]));
-    
-    setSubmitted(true);
-    setName('');
-    setEmail('');
-    setMessage('');
-    
-    setTimeout(() => {
-      setSubmitted(false);
-      setShowForm(false);
-    }, 3000);
+    try {
+      await addDoc(collection(db, 'messages'), newMessage);
+      
+      setSubmitted(true);
+      setName('');
+      setEmail('');
+      setMessage('');
+      
+      setTimeout(() => {
+        setSubmitted(false);
+        setShowForm(false);
+      }, 3000);
+    } catch (error) {
+      console.error("Error sending message:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -152,10 +161,11 @@ export default function Support() {
                     </div>
                     <button 
                       type="submit"
-                      className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 dark:shadow-none"
+                      disabled={isSubmitting}
+                      className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 dark:shadow-none disabled:opacity-50"
                     >
-                      <Send className="h-5 w-5" />
-                      Send Message
+                      {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+                      {isSubmitting ? 'Sending...' : 'Send Message'}
                     </button>
                   </form>
                 )}
