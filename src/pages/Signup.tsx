@@ -1,37 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { Leaf, ArrowRight, Sprout } from 'lucide-react';
+import { useAuth, UserProfile } from '../contexts/AuthContext';
+import { Leaf, ArrowRight, Sprout, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Canvas } from '@react-three/fiber';
 import MushroomModel from '../components/MushroomModel';
+import { v4 as uuidv4 } from 'uuid';
 
-export default function Login() {
+export default function Signup() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login, authError } = useAuth();
+  const { deviceId, login } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (authError) {
-      setError(authError);
-    }
-  }, [authError]);
-
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
+      const users: UserProfile[] = JSON.parse(localStorage.getItem('mock_users') || '[]');
+      
+      if (users.find(u => u.email === email)) {
+        setError('This email is already in use. Try logging in.');
+        setLoading(false);
+        return;
+      }
+
+      const newUser: UserProfile = {
+        id: uuidv4(),
+        full_name: name,
+        email: email,
+        role: 'student',
+        created_at: Date.now(),
+        active_device_id: deviceId,
+        completed_videos: [],
+        progress_percentage: 0,
+        is_blocked: false,
+        student_id: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
+        profile_photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`
+      };
+
+      users.push(newUser);
+      localStorage.setItem('mock_users', JSON.stringify(users));
+
       await login(email);
       navigate('/');
     } catch (err: any) {
-      console.error("Login error:", err);
-      setError(err.message || 'Authentication failed');
+      console.error("Signup error:", err);
+      setError(err.message || 'Signup failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -61,16 +82,16 @@ export default function Login() {
         >
           <div className="inline-flex items-center space-x-2 bg-white/50 dark:bg-black/30 backdrop-blur-md px-4 py-2 rounded-full mb-8 border border-white/20 dark:border-white/10">
             <Sprout className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            <span className="text-sm font-medium text-stone-800 dark:text-stone-200">Next-Gen Farming</span>
+            <span className="text-sm font-medium text-stone-800 dark:text-stone-200">Join the Community</span>
           </div>
           
           <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight mb-6 leading-tight">
-            <span className="text-gradient">Organic</span><br />
-            Mushroom Farming
+            <span className="text-gradient">Start Your</span><br />
+            Farming Journey
           </h1>
           
           <p className="text-lg text-stone-600 dark:text-stone-400 mb-10 max-w-lg leading-relaxed">
-            Join our immersive training platform. Learn sustainable techniques, track your progress, and build your own organic farm from scratch.
+            Create your account today and gain access to our comprehensive organic mushroom farming training.
           </p>
 
           {/* 3D Mushroom Model */}
@@ -81,18 +102,6 @@ export default function Login() {
                 <MushroomModel />
               </Canvas>
             </div>
-            
-            <motion.div 
-              animate={{ y: [0, -15, 0], rotateZ: [-5, -5, -5] }}
-              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute top-0 left-0 w-48 h-32 glass-card rounded-2xl p-4 z-10 opacity-50"
-            >
-              <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center mb-3">
-                <Leaf className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div className="h-2 w-24 bg-stone-200 dark:bg-stone-700 rounded mb-2"></div>
-              <div className="h-2 w-16 bg-stone-200 dark:bg-stone-700 rounded"></div>
-            </motion.div>
           </div>
         </motion.div>
       </div>
@@ -108,14 +117,31 @@ export default function Login() {
           <div className="glass-card rounded-3xl p-8 sm:p-10">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-stone-900 dark:text-white mb-2">
-                Welcome back
+                Create Account
               </h2>
               <p className="text-stone-500 dark:text-stone-400">
-                Enter your details to access your courses.
+                Join thousands of students learning today.
               </p>
             </div>
 
-            <form className="space-y-5" onSubmit={handleAuth}>
+            <form className="space-y-5" onSubmit={handleSignup}>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  Full Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-stone-400" />
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-white/50 dark:bg-black/20 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all outline-none dark:text-white"
+                    placeholder="John Doe"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1">
                   Email address
@@ -155,15 +181,15 @@ export default function Login() {
                 disabled={loading}
                 className="w-full button-3d text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center group"
               >
-                {loading ? 'Please wait...' : 'Sign In'}
+                {loading ? 'Creating account...' : 'Create Account'}
                 {!loading && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />}
               </button>
 
               <div className="text-center mt-6">
                 <p className="text-stone-600 dark:text-stone-400">
-                  Don't have an account?{' '}
-                  <Link to="/signup" className="text-purple-600 dark:text-purple-400 font-bold hover:underline">
-                    Sign Up
+                  Already have an account?{' '}
+                  <Link to="/login" className="text-purple-600 dark:text-purple-400 font-bold hover:underline">
+                    Sign In
                   </Link>
                 </p>
               </div>

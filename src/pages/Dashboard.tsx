@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
-import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Lesson } from '../data/lessons';
+import { INITIAL_LESSONS, Lesson } from '../data/lessons';
 import { 
   Play, 
   Lock, 
@@ -41,18 +39,26 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'lessons'), (snap) => {
-      const fetchedLessons = snap.docs.map(doc => doc.data() as Lesson);
-      fetchedLessons.sort((a, b) => a.order - b.order);
-      setLessons(fetchedLessons);
+    const fetchLessons = () => {
+      const storedLessons = JSON.parse(localStorage.getItem('mock_lessons') || '[]');
+      if (storedLessons.length === 0) {
+        localStorage.setItem('mock_lessons', JSON.stringify(INITIAL_LESSONS));
+        setLessons(INITIAL_LESSONS);
+      } else {
+        const fetchedLessons = storedLessons as Lesson[];
+        fetchedLessons.sort((a, b) => a.order - b.order);
+        setLessons(fetchedLessons);
+      }
       setLoading(false);
-    });
+    };
 
+    fetchLessons();
     const timer = setInterval(() => setNow(new Date()), 1000);
+    window.addEventListener('storage', fetchLessons);
 
     return () => {
-      unsub();
       clearInterval(timer);
+      window.removeEventListener('storage', fetchLessons);
     };
   }, []);
 
@@ -118,10 +124,15 @@ export default function Dashboard() {
       const activeLessons = lessons.filter(l => l.status === 'active');
       const progressPercentage = Math.round((newCompletedVideos.length / activeLessons.length) * 100);
 
-      await updateDoc(doc(db, 'users', user.uid), {
-        completed_videos: newCompletedVideos,
-        progress_percentage: progressPercentage
-      });
+      const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
+      const updatedUsers = users.map((u: any) => 
+        u.id === user.uid 
+          ? { ...u, completed_videos: newCompletedVideos, progress_percentage: progressPercentage } 
+          : u
+      );
+      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
+      // Trigger storage event to update AuthContext
+      window.dispatchEvent(new Event('storage'));
     } catch (error) {
       console.error("Error completing lesson:", error);
     }

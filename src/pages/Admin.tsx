@@ -1,23 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, updateDoc, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
 import { useAuth, UserProfile } from '../contexts/AuthContext';
 import { INITIAL_LESSONS, Lesson } from '../data/lessons';
-import { Video, Save, Loader2, CheckCircle, AlertCircle, ChevronLeft, LogOut, Users, Settings, ShieldAlert, Trash2, Ban, UserCheck } from 'lucide-react';
+import { Video, Save, Loader2, CheckCircle, AlertCircle, ChevronLeft, LogOut, Users, Settings, ShieldAlert, Trash2, Ban, UserCheck, UserPlus, X, MessageSquare, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link, useNavigate } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid';
 
-type AdminTab = 'content' | 'users';
+type AdminTab = 'content' | 'users' | 'messages';
+
+export interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  message: string;
+  date: number;
+  read: boolean;
+}
 
 export default function Admin() {
   const { profile, logout } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<AdminTab>('content');
+  const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  
+  // User Creation State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
+  const [creating, setCreating] = useState(false);
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const handleLogout = async () => {
     try {
@@ -29,36 +45,38 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchData = () => {
       setLoading(true);
+      setMessage(null);
       try {
         // Fetch Lessons
-        const lessonsSnapshot = await getDocs(collection(db, 'lessons'));
-        if (lessonsSnapshot.empty) {
-          const initialData = [...INITIAL_LESSONS];
-          for (const lesson of initialData) {
-            await setDoc(doc(db, 'lessons', lesson.id), lesson);
-          }
-          setLessons(initialData);
+        const storedLessons = JSON.parse(localStorage.getItem('mock_lessons') || '[]');
+        if (storedLessons.length === 0) {
+          localStorage.setItem('mock_lessons', JSON.stringify(INITIAL_LESSONS));
+          setLessons(INITIAL_LESSONS);
         } else {
-          const fetchedLessons = lessonsSnapshot.docs.map(doc => doc.data() as Lesson);
-          fetchedLessons.sort((a, b) => a.order - b.order);
-          setLessons(fetchedLessons);
+          setLessons(storedLessons);
         }
 
         // Fetch Users
-        const usersSnapshot = await getDocs(query(collection(db, 'users'), orderBy('created_at', 'desc')));
-        const fetchedUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
-        setUsers(fetchedUsers);
+        const storedUsers = JSON.parse(localStorage.getItem('mock_users') || '[]');
+        setUsers(storedUsers);
 
-      } catch (error) {
-        console.error("Error fetching admin data:", error);
+        // Fetch Messages
+        const storedMessages = JSON.parse(localStorage.getItem('mock_messages') || '[]');
+        setMessages(storedMessages);
+      } catch (error: any) {
+        setMessage({ type: 'error', text: "Error fetching data: " + error.message });
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
+    
+    // Listen for changes from other tabs
+    window.addEventListener('storage', fetchData);
+    return () => window.removeEventListener('storage', fetchData);
   }, []);
 
   const handleUrlChange = (id: string, newUrl: string) => {
@@ -69,12 +87,11 @@ export default function Admin() {
     setSaving(true);
     setMessage(null);
     try {
-      await updateDoc(doc(db, 'lessons', lesson.id), {
-        videoUrl: lesson.videoUrl
-      });
+      const updatedLessons = lessons.map(l => l.id === lesson.id ? lesson : l);
+      localStorage.setItem('mock_lessons', JSON.stringify(updatedLessons));
+      setLessons(updatedLessons);
       setMessage({ type: 'success', text: `Updated ${lesson.title} video link successfully!` });
     } catch (error) {
-      console.error("Error updating lesson:", error);
       setMessage({ type: 'error', text: "Failed to update video link." });
     } finally {
       setSaving(false);
@@ -83,27 +100,96 @@ export default function Admin() {
 
   const toggleUserBlock = async (userId: string, currentStatus: boolean) => {
     try {
-      await updateDoc(doc(db, 'users', userId), {
-        is_blocked: !currentStatus
-      });
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_blocked: !currentStatus } : u));
+      const updatedUsers = users.map(u => u.id === userId ? { ...u, is_blocked: !currentStatus } : u);
+      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
+      setUsers(updatedUsers);
       setMessage({ type: 'success', text: `User ${!currentStatus ? 'blocked' : 'unblocked'} successfully.` });
-    } catch (error) {
-      console.error("Error toggling user block:", error);
-      setMessage({ type: 'error', text: "Failed to update user status." });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || "Failed to update user status." });
     }
   };
 
   const deleteUser = async (userId: string) => {
-    if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
     try {
-      await deleteDoc(doc(db, 'users', userId));
-      setUsers(prev => prev.filter(u => u.id !== userId));
+      const updatedUsers = users.filter(u => u.id !== userId);
+      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
+      setUsers(updatedUsers);
       setMessage({ type: 'success', text: "User deleted successfully." });
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      setMessage({ type: 'error', text: "Failed to delete user." });
+      setShowDeleteConfirm(null);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || "Failed to delete user." });
     }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const trimmedEmail = newUser.email.trim().toLowerCase();
+    const trimmedName = newUser.name.trim();
+    const trimmedPassword = newUser.password.trim();
+
+    if (!trimmedEmail || !trimmedName || !trimmedPassword) {
+      setMessage({ type: 'error', text: "All fields are required." });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setMessage({ type: 'error', text: "Invalid email format." });
+      return;
+    }
+
+    if (trimmedPassword.length < 6) {
+      setMessage({ type: 'error', text: "Password must be at least 6 characters long." });
+      return;
+    }
+
+    setCreating(true);
+    setMessage(null);
+    try {
+      if (users.find(u => u.email === trimmedEmail)) {
+        throw new Error("Email already exists.");
+      }
+
+      const newStudent: UserProfile = {
+        id: uuidv4(),
+        full_name: trimmedName,
+        email: trimmedEmail,
+        role: 'student',
+        created_at: Date.now(),
+        active_device_id: '',
+        completed_videos: [],
+        progress_percentage: 0,
+        is_blocked: false,
+        student_id: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
+        profile_photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${trimmedEmail}`
+      };
+
+      const updatedUsers = [...users, newStudent];
+      localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
+      setUsers(updatedUsers);
+
+      setMessage({ type: 'success', text: "User created successfully!" });
+      setShowCreateModal(false);
+      setNewUser({ name: '', email: '', password: '' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || "Failed to create user." });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggleMessageRead = (messageId: string, currentStatus: boolean) => {
+    const updatedMessages = messages.map(m => m.id === messageId ? { ...m, read: !currentStatus } : m);
+    localStorage.setItem('mock_messages', JSON.stringify(updatedMessages));
+    setMessages(updatedMessages);
+  };
+
+  const deleteMessage = (messageId: string) => {
+    const updatedMessages = messages.filter(m => m.id !== messageId);
+    localStorage.setItem('mock_messages', JSON.stringify(updatedMessages));
+    setMessages(updatedMessages);
+    setMessage({ type: 'success', text: "Message deleted successfully." });
   };
 
   if (loading) {
@@ -134,7 +220,7 @@ export default function Admin() {
             <h1 className="text-4xl font-black text-stone-900 dark:text-white tracking-tight mb-2">
               Admin <span className="text-purple-600">Dashboard</span>
             </h1>
-            <p className="text-stone-600 dark:text-stone-400">Manage course content and users</p>
+            <p className="text-stone-600 dark:text-stone-400">Manage users, messages, and content</p>
           </div>
           <div className="flex items-center gap-3">
             <Link 
@@ -155,29 +241,57 @@ export default function Admin() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex gap-4 mb-8 bg-white dark:bg-stone-900 p-1.5 rounded-2xl border border-stone-200 dark:border-stone-800 w-fit">
-          <button
-            onClick={() => setActiveTab('content')}
-            className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
-              activeTab === 'content' 
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' 
-                : 'text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Video className="h-4 w-4" />
-            Content Management
-          </button>
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
-              activeTab === 'users' 
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' 
-                : 'text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Users className="h-4 w-4" />
-            User Management
-          </button>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+          <div className="flex gap-4 bg-white dark:bg-stone-900 p-1.5 rounded-2xl border border-stone-200 dark:border-stone-800 w-fit overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                activeTab === 'users' 
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' 
+                  : 'text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              Users
+            </button>
+            <button
+              onClick={() => setActiveTab('messages')}
+              className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                activeTab === 'messages' 
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' 
+                  : 'text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+              }`}
+            >
+              <MessageSquare className="h-4 w-4" />
+              Messages
+              {messages.filter(m => !m.read).length > 0 && (
+                <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full ml-1">
+                  {messages.filter(m => !m.read).length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('content')}
+              className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                activeTab === 'content' 
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' 
+                  : 'text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+              }`}
+            >
+              <Video className="h-4 w-4" />
+              Content
+            </button>
+          </div>
+
+          {activeTab === 'users' && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-6 py-2.5 bg-purple-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 dark:shadow-none whitespace-nowrap"
+            >
+              <UserPlus className="h-4 w-4" />
+              Add New Student
+            </button>
+          )}
         </div>
 
         {message && (
@@ -193,65 +307,108 @@ export default function Admin() {
           </motion.div>
         )}
 
-        <AnimatePresence mode="wait">
-          {activeTab === 'content' ? (
-            <motion.div
-              key="content"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-6"
-            >
-              {lessons.map((lesson) => (
-                <div key={lesson.id} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800">
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <span className="text-xs font-bold uppercase tracking-widest text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-1 rounded-md mb-2 inline-block">
-                        Lesson {lesson.order}
-                      </span>
-                      <h2 className="text-xl font-bold text-stone-900 dark:text-white">{lesson.title}</h2>
-                    </div>
-                  </div>
+        <AnimatePresence>
+          {showCreateModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/50 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white dark:bg-stone-900 rounded-3xl p-8 w-full max-w-md border border-stone-200 dark:border-stone-800 shadow-2xl"
+              >
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-black text-stone-900 dark:text-white">Add New <span className="text-purple-600">Student</span></h2>
+                  <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors">
+                    <X className="h-6 w-6 text-stone-500" />
+                  </button>
+                </div>
 
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">
-                        Google Drive Video URL (Preview Link)
-                      </label>
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <input
-                          type="url"
-                          value={lesson.videoUrl}
-                          onChange={(e) => handleUrlChange(lesson.id, e.target.value)}
-                          placeholder="https://drive.google.com/file/d/.../preview"
-                          className="flex-1 px-4 py-3 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
-                        />
-                        <button
-                          onClick={() => handleSaveLesson(lesson)}
-                          disabled={saving}
-                          className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-200 dark:shadow-none"
-                        >
-                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                          Save Changes
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="pt-4 border-t border-stone-100 dark:border-stone-800 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-xl">
-                        <p className="text-[10px] uppercase font-bold text-stone-400 mb-1">English PDF</p>
-                        <p className="text-xs text-stone-600 dark:text-stone-400 truncate">{lesson.pdfEnglish}</p>
-                      </div>
-                      <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-xl">
-                        <p className="text-[10px] uppercase font-bold text-stone-400 mb-1">Hindi PDF</p>
-                        <p className="text-xs text-stone-600 dark:text-stone-400 truncate">{lesson.pdfHindi}</p>
-                      </div>
-                    </div>
+                <form onSubmit={handleCreateUser} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">Full Name</label>
+                    <input
+                      required
+                      type="text"
+                      value={newUser.name}
+                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                      className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                      placeholder="John Doe"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">Email Address</label>
+                    <input
+                      required
+                      type="email"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                      className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                      placeholder="john@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">Password</label>
+                    <input
+                      required
+                      type="password"
+                      value={newUser.password}
+                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                      className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                      placeholder="••••••••"
+                      minLength={6}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={creating}
+                    className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-200 dark:shadow-none mt-4"
+                  >
+                    {creating ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserPlus className="h-5 w-5" />}
+                    Create Student Account
+                  </button>
+                </form>
+              </motion.div>
+            </div>
+          )}
+
+          {showDeleteConfirm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/50 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white dark:bg-stone-900 rounded-3xl p-8 w-full max-w-md border border-stone-200 dark:border-stone-800 shadow-2xl"
+              >
+                <div className="text-center">
+                  <div className="h-16 w-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Trash2 className="h-8 w-8" />
+                  </div>
+                  <h2 className="text-2xl font-black text-stone-900 dark:text-white mb-2">Delete User?</h2>
+                  <p className="text-stone-600 dark:text-stone-400 mb-8">
+                    Are you sure you want to delete this user? This action cannot be undone and will remove all their progress data.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowDeleteConfirm(null)}
+                      className="flex-1 py-3 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 rounded-xl font-bold hover:bg-stone-200 dark:hover:bg-stone-700 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => deleteUser(showDeleteConfirm)}
+                      className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 dark:shadow-none"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
-              ))}
-            </motion.div>
-          ) : (
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence mode="wait">
+          {activeTab === 'users' && (
             <motion.div
               key="users"
               initial={{ opacity: 0, y: 10 }}
@@ -285,7 +442,7 @@ export default function Admin() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <p className="text-sm font-medium text-stone-700 dark:text-stone-300">{u.student_id}</p>
+                          <p className="text-sm font-medium text-stone-700 dark:text-stone-300">{u.id}</p>
                           <p className="text-xs text-stone-500 dark:text-stone-500">{u.email}</p>
                         </td>
                         <td className="px-6 py-4">
@@ -320,7 +477,7 @@ export default function Admin() {
                               {u.is_blocked ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
                             </button>
                             <button
-                              onClick={() => deleteUser(u.id)}
+                              onClick={() => setShowDeleteConfirm(u.id)}
                               title="Delete User"
                               className="p-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 transition-all"
                             >
@@ -333,6 +490,130 @@ export default function Admin() {
                   </tbody>
                 </table>
               </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'messages' && (
+            <motion.div
+              key="messages"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-sm"
+            >
+              {messages.length === 0 ? (
+                <div className="p-12 text-center text-stone-500 dark:text-stone-400">
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No messages yet.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-stone-50 dark:bg-stone-800/50 border-b border-stone-200 dark:border-stone-800">
+                        <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-stone-500 dark:text-stone-400">Date</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-stone-500 dark:text-stone-400">User</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-stone-500 dark:text-stone-400">Message</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-stone-500 dark:text-stone-400">Status</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-stone-500 dark:text-stone-400">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                      {messages.sort((a, b) => b.date - a.date).map((m) => (
+                        <tr key={m.id} className={`hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors ${!m.read ? 'bg-purple-50/30 dark:bg-purple-900/10' : ''}`}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-600 dark:text-stone-400">
+                            {new Date(m.date).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="font-bold text-stone-900 dark:text-white">{m.name}</p>
+                            <p className="text-xs text-stone-500 dark:text-stone-500">{m.email}</p>
+                          </td>
+                          <td className="px-6 py-4 max-w-xs">
+                            <p className="text-sm text-stone-700 dark:text-stone-300 truncate" title={m.message}>{m.message}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                            {!m.read ? (
+                              <span className="text-[10px] font-bold uppercase bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">New</span>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 px-2 py-0.5 rounded-full">Read</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => toggleMessageRead(m.id, m.read)}
+                                title={m.read ? "Mark as Unread" : "Mark as Read"}
+                                className={`p-2 rounded-lg transition-all ${
+                                  m.read 
+                                    ? 'bg-stone-100 dark:bg-stone-800 text-stone-600 hover:bg-stone-200' 
+                                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 hover:bg-purple-200'
+                                }`}
+                              >
+                                {m.read ? <MessageSquare className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                              </button>
+                              <button
+                                onClick={() => deleteMessage(m.id)}
+                                title="Delete Message"
+                                className="p-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 transition-all"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {activeTab === 'content' && (
+            <motion.div
+              key="content"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {lessons.map((lesson) => (
+                <div key={lesson.id} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800">
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-widest text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-1 rounded-md mb-2 inline-block">
+                        Lesson {lesson.order}
+                      </span>
+                      <h2 className="text-xl font-bold text-stone-900 dark:text-white">{lesson.title}</h2>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">
+                        Video URL
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <input
+                          type="url"
+                          value={lesson.videoUrl}
+                          onChange={(e) => handleUrlChange(lesson.id, e.target.value)}
+                          placeholder="https://..."
+                          className="flex-1 px-4 py-3 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                        />
+                        <button
+                          onClick={() => handleSaveLesson(lesson)}
+                          disabled={saving}
+                          className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-200 dark:shadow-none"
+                        >
+                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </motion.div>
           )}
         </AnimatePresence>

@@ -1,15 +1,48 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, Mail, MessageCircle, MapPin, Send, ChevronDown, ChevronUp } from 'lucide-react';
+import { Phone, Mail, MessageCircle, MapPin, Send, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function Support() {
   const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
   const contactMethods = [
     { name: 'Phone Support', value: '9203544140', icon: <Phone className="h-6 w-6" />, url: 'tel:9203544140', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' },
     { name: 'WhatsApp', value: '919203544140', icon: <MessageCircle className="h-6 w-6" />, url: 'https://wa.me/919203544140', color: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' },
     { name: 'Email Us', value: 'sonib491@gmail.com', icon: <Mail className="h-6 w-6" />, url: 'mailto:sonib491@gmail.com', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' },
     { name: 'Location', value: 'Jabalpur, Madhya Pradesh', icon: <MapPin className="h-6 w-6" />, url: 'https://maps.google.com/?q=Jabalpur', color: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' },
   ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !email || !message) return;
+
+    const newMessage = {
+      id: uuidv4(),
+      name,
+      email,
+      message,
+      date: Date.now(),
+      read: false
+    };
+
+    const existingMessages = JSON.parse(localStorage.getItem('mock_messages') || '[]');
+    localStorage.setItem('mock_messages', JSON.stringify([...existingMessages, newMessage]));
+    
+    setSubmitted(true);
+    setName('');
+    setEmail('');
+    setMessage('');
+    
+    setTimeout(() => {
+      setSubmitted(false);
+      setShowForm(false);
+    }, 3000);
+  };
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950 transition-colors py-16 px-4 sm:px-6 lg:px-8">
@@ -70,41 +103,62 @@ export default function Support() {
             >
               <div className="bg-white dark:bg-stone-900 p-8 sm:p-12 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 shadow-sm mb-16">
                 <h2 className="text-2xl font-bold text-stone-900 dark:text-white mb-8">Send us a Message</h2>
-                <form className="space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-sm font-bold text-stone-700 dark:text-stone-300 ml-1">Full Name</label>
-                      <input 
-                        type="text" 
-                        placeholder="John Doe"
-                        className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-bold text-stone-700 dark:text-stone-300 ml-1">Email Address</label>
-                      <input 
-                        type="email" 
-                        placeholder="john@example.com"
-                        className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-stone-700 dark:text-stone-300 ml-1">Message</label>
-                    <textarea 
-                      rows={4}
-                      placeholder="How can we help you?"
-                      className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
-                    />
-                  </div>
-                  <button 
-                    type="button"
-                    className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 dark:shadow-none"
+                {submitted ? (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex flex-col items-center justify-center py-8 text-center"
                   >
-                    <Send className="h-5 w-5" />
-                    Send Message
-                  </button>
-                </form>
+                    <CheckCircle className="h-16 w-16 text-green-500 mb-4" />
+                    <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-2">Message Sent!</h3>
+                    <p className="text-stone-600 dark:text-stone-400">Thank you for reaching out. We'll get back to you soon.</p>
+                  </motion.div>
+                ) : (
+                  <form className="space-y-6" onSubmit={handleSubmit}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-stone-700 dark:text-stone-300 ml-1">Full Name</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="John Doe"
+                          className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-stone-700 dark:text-stone-300 ml-1">Email Address</label>
+                        <input 
+                          type="email" 
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="john@example.com"
+                          className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-stone-700 dark:text-stone-300 ml-1">Message</label>
+                      <textarea 
+                        rows={4}
+                        required
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="How can we help you?"
+                        className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl focus:ring-2 focus:ring-purple-500 outline-none transition-all dark:text-white"
+                      />
+                    </div>
+                    <button 
+                      type="submit"
+                      className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 dark:shadow-none"
+                    >
+                      <Send className="h-5 w-5" />
+                      Send Message
+                    </button>
+                  </form>
+                )}
               </div>
             </motion.div>
           )}
