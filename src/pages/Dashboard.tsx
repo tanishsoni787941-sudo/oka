@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import VideoPlayer from '../components/VideoPlayer';
 import { format, addDays, isAfter, isBefore, setHours, setMinutes, setSeconds, differenceInSeconds } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
 export default function Dashboard() {
@@ -127,10 +127,15 @@ export default function Dashboard() {
       const progressPercentage = Math.round((newCompletedVideos.length / activeLessons.length) * 100);
 
       const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        completed_videos: newCompletedVideos,
-        progress_percentage: progressPercentage
-      });
+      try {
+        await updateDoc(userRef, {
+          completed_videos: newCompletedVideos,
+          progress_percentage: progressPercentage
+        });
+      } catch (firestoreError) {
+        handleFirestoreError(firestoreError, OperationType.UPDATE, `users/${user.uid}`);
+        throw firestoreError;
+      }
     } catch (error) {
       console.error("Error completing lesson:", error);
     }

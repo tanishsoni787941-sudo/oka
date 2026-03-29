@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Phone, Mail, MessageCircle, MapPin, Send, ChevronDown, ChevronUp, CheckCircle, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
 
 export default function Support() {
@@ -35,7 +35,12 @@ export default function Support() {
     };
 
     try {
-      await addDoc(collection(db, 'messages'), newMessage);
+      try {
+        await addDoc(collection(db, 'messages'), newMessage);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'messages');
+        throw error;
+      }
       
       setSubmitted(true);
       setName('');
@@ -46,7 +51,16 @@ export default function Support() {
         setSubmitted(false);
         setShowForm(false);
       }, 3000);
-    } catch (error) {
+    } catch (error: any) {
+      try {
+        const parsedErr = JSON.parse(error.message);
+        if (parsedErr.error) {
+          console.error("Error sending message:", parsedErr.error);
+          return;
+        }
+      } catch (e) {
+        // not a json error
+      }
       console.error("Error sending message:", error);
     } finally {
       setIsSubmitting(false);

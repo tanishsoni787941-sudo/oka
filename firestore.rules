@@ -1,0 +1,106 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "tanishsoni787941@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidOptionalString(data, field, minLen, maxLen) {
+      return !data.keys().hasAny([field]) ||
+             (data[field] is string &&
+              data[field].size() >= minLen &&
+              data[field].size() <= maxLen);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser(data) {
+      return data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'created_at', 'completed_videos', 'progress_percentage', 'sessionId']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
+             data.role in ['admin', 'user', 'student'] &&
+             data.status in ['active', 'blocked'] &&
+             data.created_at is number &&
+             data.completed_videos is list && data.completed_videos.size() <= 1000 &&
+             data.progress_percentage is number && data.progress_percentage >= 0 && data.progress_percentage <= 100 &&
+             isValidOptionalString(data, 'sessionId', 0, 100);
+    }
+    
+    function isValidMessage(data) {
+      return data.keys().hasOnly(['name', 'email', 'message', 'date', 'read']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
+             data.date is number &&
+             data.read is bool;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /users/{userId} {
+      // Create: User can create their own profile. Role must be 'user' or 'student' unless created by admin.
+      allow create: if isAuthenticated() && 
+                       isOwner(userId) && 
+                       isValidUser(request.resource.data) && 
+                       request.resource.data.uid == userId &&
+                       (request.resource.data.role in ['user', 'student'] || isAdmin()) &&
+                       (request.resource.data.status == 'active' || isAdmin());
+                       
+      // Read: User can read their own profile. Admin can read all.
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Update: 
+      // User can update their own profile (only completed_videos and progress_percentage).
+      // Admin can update any profile.
+      allow update: if isAuthenticated() && 
+                       isValidUser(request.resource.data) && 
+                       request.resource.data.uid == resource.data.uid &&
+                       (
+                         (isOwner(userId) && 
+                          request.resource.data.role == resource.data.role && 
+                          request.resource.data.status == resource.data.status &&
+                          request.resource.data.created_at == resource.data.created_at &&
+                          request.resource.data.email == resource.data.email &&
+                          request.resource.data.name == resource.data.name) 
+                         || isAdmin()
+                       );
+                       
+      // Delete: Admin only
+      allow delete: if isAdmin();
+    }
+    
+    match /messages/{messageId} {
+      // Create: Anyone can create a message
+      allow create: if isValidMessage(request.resource.data) && request.resource.data.read == false;
+      
+      // Read, Update, Delete: Admin only
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}

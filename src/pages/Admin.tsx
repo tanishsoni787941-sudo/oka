@@ -5,8 +5,9 @@ import { Video, Save, Loader2, CheckCircle, AlertCircle, ChevronLeft, LogOut, Us
 import { motion, AnimatePresence } from 'motion/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { db, secondaryAuth, handleFirestoreError, OperationType } from '../firebase';
+import { collection, getDocs, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 
 type AdminTab = 'content' | 'users' | 'messages';
 
@@ -61,15 +62,36 @@ export default function Admin() {
         }
 
         // Fetch Users from Firestore
-        const usersSnapshot = await getDocs(collection(db, 'users'));
+        let usersSnapshot;
+        try {
+          usersSnapshot = await getDocs(collection(db, 'users'));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.LIST, 'users');
+          throw error;
+        }
         const usersData = usersSnapshot.docs.map(doc => doc.data() as UserProfile);
         setUsers(usersData);
 
         // Fetch Messages from Firestore
-        const messagesSnapshot = await getDocs(collection(db, 'messages'));
+        let messagesSnapshot;
+        try {
+          messagesSnapshot = await getDocs(collection(db, 'messages'));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.LIST, 'messages');
+          throw error;
+        }
         const messagesData = messagesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ContactMessage));
         setMessages(messagesData);
       } catch (error: any) {
+        try {
+          const parsedErr = JSON.parse(error.message);
+          if (parsedErr.error) {
+            setMessage({ type: 'error', text: "Error fetching data: " + parsedErr.error });
+            return;
+          }
+        } catch (e) {
+          // not a json error
+        }
         setMessage({ type: 'error', text: "Error fetching data: " + error.message });
       } finally {
         setLoading(false);
@@ -105,45 +127,159 @@ export default function Admin() {
   const toggleUserBlock = async (userId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'blocked' ? 'active' : 'blocked';
-      await updateDoc(doc(db, 'users', userId), { status: newStatus });
+      try {
+        await updateDoc(doc(db, 'users', userId), { status: newStatus });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+        throw error;
+      }
       setUsers(users.map(u => u.uid === userId ? { ...u, status: newStatus } : u));
       setMessage({ type: 'success', text: `User ${newStatus === 'blocked' ? 'blocked' : 'unblocked'} successfully.` });
     } catch (error: any) {
+      try {
+        const parsedErr = JSON.parse(error.message);
+        if (parsedErr.error) {
+          setMessage({ type: 'error', text: parsedErr.error });
+          return;
+        }
+      } catch (e) {
+        // not a json error
+      }
       setMessage({ type: 'error', text: error.message || "Failed to update user status." });
     }
   };
 
   const deleteUser = async (userId: string) => {
     try {
-      await deleteDoc(doc(db, 'users', userId));
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `users/${userId}`);
+        throw error;
+      }
       setUsers(users.filter(u => u.uid !== userId));
       setMessage({ type: 'success', text: "User deleted successfully." });
       setShowDeleteConfirm(null);
     } catch (error: any) {
+      try {
+        const parsedErr = JSON.parse(error.message);
+        if (parsedErr.error) {
+          setMessage({ type: 'error', text: parsedErr.error });
+          return;
+        }
+      } catch (e) {
+        // not a json error
+      }
       setMessage({ type: 'error', text: error.message || "Failed to delete user." });
     }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage({ type: 'error', text: "Creating users from admin panel is not fully supported yet. Please use the signup page." });
+    setMessage(null);
+    setCreating(true);
+
+    try {
+      // 1. Create user in Secondary Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
+      const user = userCredential.user;
+
+      // 2. Update profile with name
+      await updateProfile(user, { displayName: newUser.name });
+
+      // 3. Save user data in Firestore
+      const newUserData: UserProfile = {
+        uid: user.uid,
+        name: newUser.name,
+        email: newUser.email,
+        role: 'user',
+        status: 'active',
+        created_at: Date.now(),
+        completed_videos: [],
+        progress_percentage: 0
+      };
+
+      try {
+        await setDoc(doc(db, 'users', user.uid), newUserData);
+      } catch (firestoreError) {
+        handleFirestoreError(firestoreError, OperationType.CREATE, `users/${user.uid}`);
+        throw firestoreError;
+      }
+
+      // 4. Sign out the secondary auth so it doesn't interfere
+      await signOut(secondaryAuth);
+
+      // 5. Update local state
+      setUsers([...users, newUserData]);
+      setMessage({ type: 'success', text: "Student account created successfully." });
+      setShowCreateModal(false);
+      setNewUser({ name: '', email: '', password: '' });
+    } catch (err: any) {
+      console.error("Create user error:", err);
+      if (err.code === 'auth/email-already-in-use') {
+        setMessage({ type: 'error', text: 'This email is already in use.' });
+      } else if (err.code === 'auth/invalid-email') {
+        setMessage({ type: 'error', text: 'Invalid email format.' });
+      } else {
+        try {
+          const parsedErr = JSON.parse(err.message);
+          if (parsedErr.error) {
+            setMessage({ type: 'error', text: parsedErr.error });
+            return;
+          }
+        } catch (e) {
+          // not a json error
+        }
+        setMessage({ type: 'error', text: err.message || 'Failed to create user.' });
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   const toggleMessageRead = async (messageId: string, currentStatus: boolean) => {
     try {
-      await updateDoc(doc(db, 'messages', messageId), { read: !currentStatus });
+      try {
+        await updateDoc(doc(db, 'messages', messageId), { read: !currentStatus });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `messages/${messageId}`);
+        throw error;
+      }
       setMessages(messages.map(m => m.id === messageId ? { ...m, read: !currentStatus } : m));
     } catch (error: any) {
+      try {
+        const parsedErr = JSON.parse(error.message);
+        if (parsedErr.error) {
+          setMessage({ type: 'error', text: parsedErr.error });
+          return;
+        }
+      } catch (e) {
+        // not a json error
+      }
       setMessage({ type: 'error', text: error.message || "Failed to update message status." });
     }
   };
 
   const deleteMessage = async (messageId: string) => {
     try {
-      await deleteDoc(doc(db, 'messages', messageId));
+      try {
+        await deleteDoc(doc(db, 'messages', messageId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `messages/${messageId}`);
+        throw error;
+      }
       setMessages(messages.filter(m => m.id !== messageId));
       setMessage({ type: 'success', text: "Message deleted successfully." });
     } catch (error: any) {
+      try {
+        const parsedErr = JSON.parse(error.message);
+        if (parsedErr.error) {
+          setMessage({ type: 'error', text: parsedErr.error });
+          return;
+        }
+      } catch (e) {
+        // not a json error
+      }
       setMessage({ type: 'error', text: error.message || "Failed to delete message." });
     }
   };

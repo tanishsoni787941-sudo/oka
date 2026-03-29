@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "A user's profile in the application.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The unique identifier of the user."
+        },
+        "name": {
+          "type": "string",
+          "description": "The full name of the user."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The email address of the user."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user", "student"],
+          "description": "The role of the user."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "blocked"],
+          "description": "The status of the user's account."
+        },
+        "created_at": {
+          "type": "number",
+          "description": "The timestamp when the user was created."
+        },
+        "completed_videos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A list of video IDs that the user has completed."
+        },
+        "progress_percentage": {
+          "type": "number",
+          "description": "The percentage of the course the user has completed."
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "The current session ID of the user for multi-device detection."
+        }
+      },
+      "required": ["uid", "name", "email", "role", "status", "created_at", "completed_videos", "progress_percentage"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "A message sent by a user through the support page.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the sender."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The email address of the sender."
+        },
+        "message": {
+          "type": "string",
+          "description": "The content of the message."
+        },
+        "date": {
+          "type": "number",
+          "description": "The timestamp when the message was sent."
+        },
+        "read": {
+          "type": "boolean",
+          "description": "Whether the message has been read by an admin."
+        }
+      },
+      "required": ["name", "email", "message", "date", "read"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "The collection of user profiles."
+    },
+    "/messages/{messageId}": {
+      "schema": {
+        "$ref": "#/entities/ContactMessage"
+      },
+      "description": "The collection of contact messages."
+    }
+  }
+}

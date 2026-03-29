@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface UserProfile {
   uid: string;
@@ -12,6 +13,7 @@ export interface UserProfile {
   created_at: number;
   completed_videos?: string[];
   progress_percentage?: number;
+  sessionId?: string;
 }
 
 interface AuthContextType {
@@ -33,27 +35,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [multipleDeviceError, setMultipleDeviceError] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeSnapshot: () => void;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       
       if (firebaseUser) {
-        try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDoc = await getDoc(userDocRef);
-          
-          if (userDoc.exists()) {
-            const userData = userDoc.data() as UserProfile;
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        
+        unsubscribeSnapshot = onSnapshot(userDocRef, async (docSnap) => {
+          if (docSnap.exists()) {
+            const userData = docSnap.data() as UserProfile;
+            
+            // Check for block status
             if (userData.status === 'blocked') {
               setAuthError("Your account has been blocked by admin.");
-              await signOut(auth);
+              try {
+                await signOut(auth);
+              } catch (error) {
+                console.error("Error signing out:", error);
+              }
               setUser(null);
               setProfile(null);
-            } else {
-              setProfile(userData);
-              setAuthError(null);
+              return;
             }
+
+            // Check for multi-device login
+            let localSessionId = localStorage.getItem('sessionId');
+            
+            if (!localSessionId && userData.sessionId) {
+              // If localSessionId is missing but exists in DB (e.g., cleared localStorage), sync it
+              localSessionId = userData.sessionId;
+              localStorage.setItem('sessionId', localSessionId);
+            } else if (!userData.sessionId && localSessionId) {
+              // If missing in DB but exists locally, update DB
+              try {
+                await setDoc(userDocRef, { sessionId: localSessionId }, { merge: true });
+              } catch (error) {
+                console.error("Error updating session ID:", error);
+              }
+            } else if (!localSessionId && !userData.sessionId) {
+               // If missing in both, generate and set
+               localSessionId = uuidv4();
+               localStorage.setItem('sessionId', localSessionId);
+               try {
+                 await setDoc(userDocRef, { sessionId: localSessionId }, { merge: true });
+               } catch (error) {
+                 console.error("Error updating session ID:", error);
+               }
+            }
+
+            if (userData.sessionId && localSessionId && userData.sessionId !== localSessionId) {
+              setMultipleDeviceError(true);
+              setAuthError("You have been logged out because your account was accessed from another device.");
+              try {
+                await signOut(auth);
+              } catch (error) {
+                console.error("Error signing out:", error);
+              }
+              setUser(null);
+              setProfile(null);
+              return;
+            }
+
+            setProfile(userData);
+            setAuthError(null);
           } else {
             // If user doc doesn't exist, create it (fallback)
+            let localSessionId = localStorage.getItem('sessionId');
+            if (!localSessionId) {
+              localSessionId = uuidv4();
+              localStorage.setItem('sessionId', localSessionId);
+            }
             const newProfile: UserProfile = {
               uid: firebaseUser.uid,
               name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
@@ -62,29 +115,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               status: 'active',
               created_at: Date.now(),
               completed_videos: [],
-              progress_percentage: 0
+              progress_percentage: 0,
+              sessionId: localSessionId
             };
-            await setDoc(userDocRef, newProfile);
+            try {
+              await setDoc(userDocRef, newProfile);
+            } catch (error) {
+              handleFirestoreError(error, OperationType.CREATE, `users/${firebaseUser.uid}`);
+              throw error;
+            }
             setProfile(newProfile);
           }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setAuthError("Failed to load user profile.");
-        }
+          setLoading(false);
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
+        if (unsubscribeSnapshot) {
+          unsubscribeSnapshot();
+        }
       }
-      
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+      }
+    };
   }, []);
 
   const logout = async () => {
     try {
       await signOut(auth);
+      localStorage.removeItem('sessionId');
       setAuthError(null);
+      setMultipleDeviceError(false);
     } catch (error) {
       console.error("Logout error:", error);
     }

@@ -4,9 +4,10 @@ import { Leaf, ArrowRight, Sprout, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Canvas } from '@react-three/fiber';
 import MushroomModel from '../components/MushroomModel';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function Signup() {
   const [name, setName] = useState('');
@@ -38,17 +39,27 @@ export default function Signup() {
       // 2. Update profile with name
       await updateProfile(user, { displayName: name });
 
+      // Generate session ID
+      const sessionId = uuidv4();
+      localStorage.setItem('sessionId', sessionId);
+
       // 3. Save user data in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        name: name,
-        email: email,
-        role: 'user',
-        status: 'active',
-        created_at: Date.now(),
-        completed_videos: [],
-        progress_percentage: 0
-      });
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          name: name,
+          email: email,
+          role: 'user',
+          status: 'active',
+          created_at: Date.now(),
+          completed_videos: [],
+          progress_percentage: 0,
+          sessionId: sessionId
+        });
+      } catch (firestoreError) {
+        handleFirestoreError(firestoreError, OperationType.CREATE, `users/${user.uid}`);
+        throw firestoreError;
+      }
 
       setSuccess('Account created successfully! Redirecting...');
       
@@ -64,6 +75,15 @@ export default function Signup() {
       } else if (err.code === 'auth/invalid-email') {
         setError('Invalid email format.');
       } else {
+        try {
+          const parsedErr = JSON.parse(err.message);
+          if (parsedErr.error) {
+            setError(parsedErr.error);
+            return;
+          }
+        } catch (e) {
+          // not a json error
+        }
         setError(err.message || 'Signup failed. Please try again.');
       }
     } finally {

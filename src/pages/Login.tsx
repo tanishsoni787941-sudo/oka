@@ -5,9 +5,10 @@ import { Leaf, ArrowRight, Sprout } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Canvas } from '@react-three/fiber';
 import MushroomModel from '../components/MushroomModel';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -35,12 +36,28 @@ export default function Login() {
 
       // Check Firestore users collection
       const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
+      let userDoc;
+      try {
+        userDoc = await getDoc(userDocRef);
+      } catch (firestoreError) {
+        handleFirestoreError(firestoreError, OperationType.GET, `users/${user.uid}`);
+        throw firestoreError;
+      }
 
       if (userDoc.exists()) {
         const userData = userDoc.data();
         if (userData.status === 'blocked') {
           throw new Error("Your account has been blocked by admin.");
+        }
+
+        // Generate and save session ID
+        const sessionId = uuidv4();
+        localStorage.setItem('sessionId', sessionId);
+        try {
+          await setDoc(userDocRef, { sessionId }, { merge: true });
+        } catch (firestoreError) {
+          handleFirestoreError(firestoreError, OperationType.UPDATE, `users/${user.uid}`);
+          throw firestoreError;
         }
       }
 
@@ -50,6 +67,15 @@ export default function Login() {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         setError('Invalid email or password.');
       } else {
+        try {
+          const parsedErr = JSON.parse(err.message);
+          if (parsedErr.error) {
+            setError(parsedErr.error);
+            return;
+          }
+        } catch (e) {
+          // not a json error
+        }
         setError(err.message || 'Authentication failed');
       }
     } finally {
